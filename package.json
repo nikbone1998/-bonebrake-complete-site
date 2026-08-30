@@ -1,0 +1,11 @@
+{
+  "name": "bonebrake-web-design",
+  "version": "8.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node scripts/static-check.mjs",
+    "test": "node --test",
+    "predeploy": "npm run check && npm test"
+  }
+}
