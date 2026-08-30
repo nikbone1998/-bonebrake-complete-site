@@ -6,6 +6,7 @@
   "scripts": {
     "check": "node scripts/static-check.mjs",
     "test": "node --test",
-    "predeploy": "npm run check && npm test"
+    "predeploy": "npm run check && npm test",
+    "vercel-build": "npm run predeploy"
   }
 }
