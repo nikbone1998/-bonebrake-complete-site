@@ -17,12 +17,16 @@ function response() {
   };
 }
 
-test('health endpoint identifies Phase 8', () => {
+test('health endpoint reports Phase 8 operations and frontend synchronization separately', () => {
   const res = response();
   health({ method:'GET' }, res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.ok, true);
-  assert.equal(res.body.build, 'phase8-operational-platform');
+  assert.equal(res.body.operations_build, 'phase8-operational-platform');
+  assert.equal(res.body.frontend_build, 'pre-phase8-production-repo');
+  assert.equal(res.body.frontend_target, 'phase8-operational-platform');
+  assert.equal(res.body.frontend_synchronized, false);
+  assert.equal(res.body.release_status, 'phase8_operations_live_frontend_sync_pending');
   assert.equal(res.headers['cache-control'], 'no-store, max-age=0');
 });
 
