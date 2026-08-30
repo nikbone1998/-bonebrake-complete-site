@@ -2,6 +2,12 @@ import crypto from 'node:crypto';
 
 const MAX_BODY_BYTES = 24_000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RATE_WINDOW_MS = 5 * 60_000;
+const RATE_LIMIT = 20;
+const MAX_CONCURRENT_DELIVERIES = 5;
+
+const rateBuckets = new Map();
+let activeDeliveries = 0;
 
 function parseBody(body) {
   if (!body) return {};
@@ -44,13 +50,37 @@ function safeWebhook(urlString) {
   if (!urlString) return null;
   try {
     const url = new URL(urlString);
-    if (url.protocol !== 'https:') return null;
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
     return url;
   } catch { return null; }
 }
 
 function signature(secret, body) {
   return crypto.createHmac('sha256', secret).update(body).digest('hex');
+}
+
+function clientKey(req) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || String(req.headers?.['x-real-ip'] || req.socket?.remoteAddress || 'unknown').trim() || 'unknown';
+}
+
+function takeRateSlot(key) {
+  const now = Date.now();
+  if (rateBuckets.size > 1000) {
+    for (const [bucketKey, bucket] of rateBuckets) {
+      if (now - bucket.startedAt > RATE_WINDOW_MS) rateBuckets.delete(bucketKey);
+    }
+  }
+  const current = rateBuckets.get(key);
+  if (!current || now - current.startedAt >= RATE_WINDOW_MS) {
+    rateBuckets.set(key, { startedAt: now, count: 1 });
+    return { allowed: true, retryAfter: 0 };
+  }
+  if (current.count >= RATE_LIMIT) {
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((RATE_WINDOW_MS - (now - current.startedAt)) / 1000)) };
+  }
+  current.count += 1;
+  return { allowed: true, retryAfter: 0 };
 }
 
 export default async function handler(req, res) {
@@ -67,7 +97,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ success:false, code:'method_not_allowed' });
   }
 
-  const rawSize = typeof req.body === 'string' ? Buffer.byteLength(req.body) : Buffer.byteLength(JSON.stringify(req.body || {}));
+  const rate = takeRateSlot(clientKey(req));
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfter));
+    return res.status(429).json({ success:false, code:'rate_limited', message:'Too many submissions. Try again shortly.' });
+  }
+
+  let rawSize = 0;
+  try { rawSize = typeof req.body === 'string' ? Buffer.byteLength(req.body) : Buffer.byteLength(JSON.stringify(req.body || {})); }
+  catch { return res.status(400).json({ success:false, code:'invalid_payload' }); }
   if (rawSize > MAX_BODY_BYTES) return res.status(413).json({ success:false, code:'payload_too_large' });
 
   const incoming = parseBody(req.body);
@@ -82,6 +120,7 @@ export default async function handler(req, res) {
 
   const loadedAt = Number(incoming.form_loaded_at || 0);
   if (loadedAt && Date.now() - loadedAt < 1200) {
+    res.setHeader('Retry-After', '2');
     return res.status(429).json({ success:false, code:'submitted_too_quickly' });
   }
 
@@ -96,15 +135,25 @@ export default async function handler(req, res) {
     });
   }
 
+  if (activeDeliveries >= MAX_CONCURRENT_DELIVERIES) {
+    res.setHeader('Retry-After', '2');
+    return res.status(503).json({ success:false, code:'delivery_busy', lead_id:lead.lead_id, fallback:'client_provider' });
+  }
+
   const body = JSON.stringify({ source:'bonebrake-web-design', version:'phase8', lead });
-  const headers = { 'Content-Type':'application/json', 'User-Agent':'BonebrakeLeadAdapter/1.0' };
+  const headers = {
+    'Content-Type':'application/json',
+    'User-Agent':'BonebrakeLeadAdapter/1.1',
+    'Idempotency-Key': lead.lead_id,
+    'X-BWD-Lead-Id': lead.lead_id
+  };
   if (process.env.LEAD_WEBHOOK_SECRET) headers['X-BWD-Signature'] = `sha256=${signature(process.env.LEAD_WEBHOOK_SECRET, body)}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 7000);
+  activeDeliveries += 1;
   try {
     const response = await fetch(webhook, { method:'POST', headers, body, signal:controller.signal, redirect:'error' });
-    clearTimeout(timer);
     if (!response.ok) {
       console.error('lead_delivery_failed', { status:response.status, lead_id:lead.lead_id });
       return res.status(502).json({ success:false, code:'delivery_failed', lead_id:lead.lead_id, fallback:'client_provider' });
@@ -112,8 +161,10 @@ export default async function handler(req, res) {
     console.info('lead_delivered', { lead_id:lead.lead_id, intent:lead.intent || 'unknown' });
     return res.status(200).json({ success:true, lead_id:lead.lead_id, delivery:'webhook' });
   } catch (error) {
-    clearTimeout(timer);
     console.error('lead_delivery_error', { lead_id:lead.lead_id, type:error?.name || 'error' });
     return res.status(502).json({ success:false, code:error?.name === 'AbortError' ? 'delivery_timeout' : 'delivery_error', lead_id:lead.lead_id, fallback:'client_provider' });
+  } finally {
+    clearTimeout(timer);
+    activeDeliveries = Math.max(0, activeDeliveries - 1);
   }
 }
