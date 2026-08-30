@@ -1,28 +1,42 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
 
 const MAX_BYTES = 1_500_000;
 const MAX_REDIRECTS = 3;
 const TIMEOUT_MS = 7000;
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMIT = 10;
+const MAX_CONCURRENT_AUDITS = 4;
+
+const rateBuckets = new Map();
+let activeAudits = 0;
 
 function isPrivateIPv4(ip) {
   const p = ip.split('.').map(Number);
   if (p.length !== 4 || p.some(n => Number.isNaN(n) || n < 0 || n > 255)) return true;
-  const [a,b] = p;
+  const [a,b,c] = p;
   return a === 0 || a === 10 || a === 127 ||
     (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0) ||
     (a === 192 && b === 168) ||
+    (a === 192 && b === 0 && c === 2) ||
     (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
     a >= 224;
 }
 
 function isPrivateIPv6(ip) {
   const v = ip.toLowerCase().split('%')[0];
   if (v === '::' || v === '::1') return true;
-  if (v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')) return true;
+  if (v.startsWith('fc') || v.startsWith('fd')) return true;
+  if (/^fe[89ab]/.test(v)) return true;
+  if (v.startsWith('ff')) return true;
+  if (v.startsWith('2001:db8:') || v === '2001:db8::') return true;
   if (v.startsWith('::ffff:')) {
     const mapped = v.slice(7);
     if (net.isIPv4(mapped)) return isPrivateIPv4(mapped);
@@ -35,81 +49,161 @@ function isPrivateAddress(ip) {
   return family === 4 ? isPrivateIPv4(ip) : family === 6 ? isPrivateIPv6(ip) : true;
 }
 
+function cleanHost(hostname) {
+  return String(hostname || '').replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+}
+
 async function validateTarget(raw) {
   let url;
   try { url = new URL(raw); } catch { throw new Error('invalid_url'); }
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported_protocol');
   if (url.username || url.password) throw new Error('credentials_not_allowed');
-  const host = url.hostname.toLowerCase();
+
+  const host = cleanHost(url.hostname);
   if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) throw new Error('private_target');
-  if (net.isIP(host)) {
+
+  const literalFamily = net.isIP(host);
+  if (literalFamily) {
     if (isPrivateAddress(host)) throw new Error('private_target');
-  } else {
-    let records;
-    try { records = await dns.lookup(host, { all: true, verbatim: true }); } catch { throw new Error('dns_failed'); }
-    if (!records.length || records.some(r => isPrivateAddress(r.address))) throw new Error('private_target');
+    return { url, host, address: host, family: literalFamily };
   }
-  return url;
+
+  let records;
+  try { records = await dns.lookup(host, { all: true, verbatim: true }); }
+  catch { throw new Error('dns_failed'); }
+
+  if (!records.length) throw new Error('dns_failed');
+  if (records.some(record => isPrivateAddress(record.address))) throw new Error('private_target');
+  const selected = records[0];
+  return { url, host, address: selected.address, family: selected.family };
 }
 
-async function readLimited(response) {
-  const declared = Number(response.headers.get('content-length') || 0);
-  if (declared && declared > MAX_BYTES) throw new Error('response_too_large');
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const chunks = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_BYTES) {
-      try { await reader.cancel(); } catch {}
-      throw new Error('response_too_large');
-    }
-    chunks.push(value);
-  }
-  const merged = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder('utf-8', { fatal: false }).decode(merged);
+function headerValue(headers, name) {
+  const value = headers?.[String(name).toLowerCase()];
+  return Array.isArray(value) ? value[0] || '' : String(value || '');
+}
+
+function pinnedRequest(target) {
+  return new Promise((resolve, reject) => {
+    const { url, host, address, family } = target;
+    const client = url.protocol === 'https:' ? https : http;
+    let settled = false;
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      fn(value);
+    };
+
+    const lookup = (_hostname, options, callback) => {
+      if (typeof options === 'function') {
+        callback = options;
+        options = {};
+      }
+      if (options?.all) callback(null, [{ address, family }]);
+      else callback(null, address, family);
+    };
+
+    const request = client.request({
+      protocol: url.protocol,
+      hostname: host,
+      port: url.port || undefined,
+      method: 'GET',
+      path: `${url.pathname || '/'}${url.search || ''}`,
+      servername: family === 0 || net.isIP(host) ? undefined : host,
+      lookup,
+      headers: {
+        'User-Agent': 'BonebrakeWebsiteAudit/1.1 (+https://bonebrake-complete-site-1.vercel.app/website-audit)',
+        'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
+        'Accept-Encoding': 'identity',
+        'Connection': 'close'
+      }
+    }, response => {
+      const status = Number(response.statusCode || 0);
+      const location = headerValue(response.headers, 'location');
+
+      if ([301,302,303,307,308].includes(status)) {
+        response.resume();
+        return finish(resolve, { status, location, headers: response.headers, html: '' });
+      }
+
+      const type = headerValue(response.headers, 'content-type').toLowerCase();
+      if (!type.includes('text/html') && !type.includes('application/xhtml+xml')) {
+        response.resume();
+        return finish(reject, new Error('not_html'));
+      }
+
+      const declared = Number(headerValue(response.headers, 'content-length') || 0);
+      if (declared && declared > MAX_BYTES) {
+        response.destroy();
+        return finish(reject, new Error('response_too_large'));
+      }
+
+      const chunks = [];
+      let size = 0;
+      response.on('data', chunk => {
+        size += chunk.length;
+        if (size > MAX_BYTES) {
+          response.destroy(new Error('response_too_large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => finish(resolve, {
+        status,
+        location,
+        headers: response.headers,
+        html: Buffer.concat(chunks, size).toString('utf8')
+      }));
+      response.on('error', error => finish(reject, error?.message === 'response_too_large' ? error : new Error('fetch_failed')));
+    });
+
+    const deadline = setTimeout(() => request.destroy(new Error('fetch_timeout')), TIMEOUT_MS);
+    request.on('error', error => {
+      const code = error?.message === 'fetch_timeout' ? 'fetch_timeout' : 'fetch_failed';
+      finish(reject, new Error(code));
+    });
+    request.end();
+  });
 }
 
 async function fetchHtml(input) {
   let current = await validateTarget(input);
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    let response;
-    try {
-      response = await fetch(current, {
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'BonebrakeWebsiteAudit/1.0 (+https://bonebrake-complete-site-1.vercel.app/website-audit)',
-          'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1'
-        }
-      });
-    } catch (error) {
-      clearTimeout(timer);
-      if (error?.name === 'AbortError') throw new Error('fetch_timeout');
-      throw new Error('fetch_failed');
-    }
-    clearTimeout(timer);
-
+    const response = await pinnedRequest(current);
     if ([301,302,303,307,308].includes(response.status)) {
-      const location = response.headers.get('location');
-      if (!location || redirect === MAX_REDIRECTS) throw new Error('redirect_limit');
-      current = await validateTarget(new URL(location, current).href);
+      if (!response.location || redirect === MAX_REDIRECTS) throw new Error('redirect_limit');
+      current = await validateTarget(new URL(response.location, current.url).href);
       continue;
     }
-
-    const type = (response.headers.get('content-type') || '').toLowerCase();
-    if (!type.includes('text/html') && !type.includes('application/xhtml+xml')) throw new Error('not_html');
-    const html = await readLimited(response);
-    return { response, html, finalUrl: current.href };
+    return { status: response.status, html: response.html, finalUrl: current.url.href };
   }
   throw new Error('redirect_limit');
+}
+
+function clientKey(req) {
+  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || String(req.headers?.['x-real-ip'] || req.socket?.remoteAddress || 'unknown').trim() || 'unknown';
+}
+
+function takeRateSlot(key) {
+  const now = Date.now();
+  if (rateBuckets.size > 1000) {
+    for (const [bucketKey, bucket] of rateBuckets) {
+      if (now - bucket.startedAt > RATE_WINDOW_MS) rateBuckets.delete(bucketKey);
+    }
+  }
+  const current = rateBuckets.get(key);
+  if (!current || now - current.startedAt >= RATE_WINDOW_MS) {
+    rateBuckets.set(key, { startedAt: now, count: 1 });
+    return { allowed: true, retryAfter: 0 };
+  }
+  if (current.count >= RATE_LIMIT) {
+    return { allowed: false, retryAfter: Math.max(1, Math.ceil((RATE_WINDOW_MS - (now - current.startedAt)) / 1000)) };
+  }
+  current.count += 1;
+  return { allowed: true, retryAfter: 0 };
 }
 
 function decodeText(value='') {
@@ -216,6 +310,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
   if (req.method === 'OPTIONS') {
     res.setHeader('Allow', 'POST, OPTIONS');
     return res.status(204).end();
@@ -224,15 +319,30 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST, OPTIONS');
     return res.status(405).json({ ok:false, error:'method_not_allowed' });
   }
+
+  const rate = takeRateSlot(clientKey(req));
+  if (!rate.allowed) {
+    res.setHeader('Retry-After', String(rate.retryAfter));
+    return res.status(429).json({ ok:false, error:'rate_limited', message:'Too many audit requests. Try again shortly.' });
+  }
+  if (activeAudits >= MAX_CONCURRENT_AUDITS) {
+    res.setHeader('Retry-After', '2');
+    return res.status(503).json({ ok:false, error:'audit_busy', message:'The audit service is busy. Try again shortly.' });
+  }
+
   const raw = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
   const input = String(raw.url || '').trim().slice(0, 2048);
   if (!input) return res.status(400).json({ ok:false, error:'invalid_url', message:errorMessage('invalid_url') });
+
+  activeAudits += 1;
   try {
-    const { response, html, finalUrl } = await fetchHtml(input);
-    return res.status(200).json({ ok:true, fetched_at:new Date().toISOString(), ...analyze(html, finalUrl, response.status) });
+    const { status, html, finalUrl } = await fetchHtml(input);
+    return res.status(200).json({ ok:true, fetched_at:new Date().toISOString(), ...analyze(html, finalUrl, status) });
   } catch (error) {
     const code = error?.message || 'audit_failed';
     const status = code === 'private_target' ? 403 : code === 'fetch_timeout' ? 504 : ['invalid_url','unsupported_protocol','credentials_not_allowed','not_html','response_too_large','redirect_limit'].includes(code) ? 400 : 502;
     return res.status(status).json({ ok:false, error:code, message:errorMessage(code) });
+  } finally {
+    activeAudits = Math.max(0, activeAudits - 1);
   }
 }
