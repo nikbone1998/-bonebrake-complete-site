@@ -1,0 +1,1 @@
+Final homepage direction: single-page structure; restrained graphite/ivory/stone/bronze visual system; 3–7 day typical build window; no required retainer.
