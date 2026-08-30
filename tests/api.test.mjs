@@ -17,6 +17,10 @@ function response() {
   };
 }
 
+function request(method, body, ip) {
+  return { method, body, headers: ip ? { 'x-forwarded-for': ip } : {} };
+}
+
 test('health endpoint reports Phase 8 operations and frontend synchronization separately', () => {
   const res = response();
   health({ method:'GET' }, res);
@@ -38,35 +42,71 @@ test('health rejects writes', () => {
 
 test('audit rejects unsupported methods', async () => {
   const res = response();
-  await audit({ method:'GET' }, res);
+  await audit(request('GET', null, '203.0.113.11'), res);
   assert.equal(res.statusCode, 405);
   assert.equal(res.body.error, 'method_not_allowed');
 });
 
 test('audit rejects invalid URLs', async () => {
   const res = response();
-  await audit({ method:'POST', body:{ url:'not-a-url' } }, res);
+  await audit(request('POST', { url:'not-a-url' }, '203.0.113.12'), res);
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.error, 'invalid_url');
 });
 
-test('audit blocks loopback/private targets before fetch', async () => {
+test('audit blocks IPv4 loopback/private targets before fetch', async () => {
   const res = response();
-  await audit({ method:'POST', body:{ url:'http://127.0.0.1/' } }, res);
+  await audit(request('POST', { url:'http://127.0.0.1/' }, '203.0.113.13'), res);
   assert.equal(res.statusCode, 403);
   assert.equal(res.body.error, 'private_target');
 });
 
+test('audit blocks cloud metadata/link-local targets before fetch', async () => {
+  const res = response();
+  await audit(request('POST', { url:'http://169.254.169.254/latest/meta-data/' }, '203.0.113.14'), res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.error, 'private_target');
+});
+
+test('audit blocks IPv6 loopback targets before fetch', async () => {
+  const res = response();
+  await audit(request('POST', { url:'http://[::1]/' }, '203.0.113.15'), res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body.error, 'private_target');
+});
+
+test('audit rejects URLs containing credentials', async () => {
+  const res = response();
+  await audit(request('POST', { url:'https://user:pass@example.com/' }, '203.0.113.16'), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'credentials_not_allowed');
+});
+
 test('lead endpoint rejects invalid leads', async () => {
   const res = response();
-  await lead({ method:'POST', body:{ name:'Test', email:'invalid' } }, res);
+  await lead(request('POST', { name:'Test', email:'invalid' }, '203.0.113.21'), res);
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.code, 'invalid_lead');
 });
 
+test('lead endpoint rejects oversized payloads', async () => {
+  const res = response();
+  await lead(request('POST', JSON.stringify({ name:'Test', email:'test@example.com', description:'x'.repeat(25_000) }), '203.0.113.22'), res);
+  assert.equal(res.statusCode, 413);
+  assert.equal(res.body.code, 'payload_too_large');
+});
+
+test('lead endpoint enforces the form timing guard', async () => {
+  const res = response();
+  await lead(request('POST', { name:'Human', email:'human@example.com', form_loaded_at:Date.now() }, '203.0.113.23'), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.body.code, 'submitted_too_quickly');
+  assert.equal(res.headers['retry-after'], '2');
+});
+
 test('lead honeypot returns a neutral success without delivery', async () => {
   const res = response();
-  await lead({ method:'POST', body:{ _honey:'bot-filled', name:'Bot', email:'bot@example.com' } }, res);
+  await lead(request('POST', { _honey:'bot-filled', name:'Bot', email:'bot@example.com' }, '203.0.113.24'), res);
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.success, true);
 });
@@ -75,7 +115,7 @@ test('lead adapter is explicit when no server delivery provider is configured', 
   const original = process.env.LEAD_WEBHOOK_URL;
   delete process.env.LEAD_WEBHOOK_URL;
   const res = response();
-  await lead({ method:'POST', body:{ name:'Real Person', email:'person@example.com' } }, res);
+  await lead(request('POST', { name:'Real Person', email:'person@example.com' }, '203.0.113.25'), res);
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.code, 'delivery_adapter_unconfigured');
   assert.equal(res.body.fallback, 'client_provider');
