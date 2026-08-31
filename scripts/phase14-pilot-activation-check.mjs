@@ -43,7 +43,8 @@ for(const marker of [
 for(const marker of [
   "const OWNER='bonebrakewebsitedesign@gmail.com'",'db.auth.getUser(jwt)','allowedChecks',
   "action==='arm'",'pilot_not_ready','activate_single_customer_pilot','max_paid_projects:1','max_concurrent_projects:1',
-  "prospecting, outreach, auto-reply",'phase14_activate_single_customer_pilot','phase14_halt_single_customer_pilot'
+  'phase14_activate_single_customer_pilot','phase14_halt_single_customer_pilot',
+  "external_effect:'enable_single_customer_payments_and_fulfillment'"
 ]) if(!api.includes(marker)) failures.push(`Pilot control missing safety marker: ${marker}`);
 
 if(sql.includes('max_paid_projects smallint not null default 0')) failures.push('Pilot paid-project cap cannot default above/below exactly one.');
