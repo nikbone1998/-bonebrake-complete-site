@@ -106,10 +106,9 @@ Deno.serve(async(req:Request)=>{
       let intake:any=null
       const {data:existingIntake}=await db.from('client_intake_requests').select('*').eq('project_id',project.id).in('status',['pending','sent','submitted']).order('created_at',{ascending:false}).limit(1).maybeSingle()
       intake=existingIntake||null
-      let intakeToken:string|null=null
       if(!intake){
-        intakeToken=randomToken();const tokenHash=await sha256(intakeToken);const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString()
-        const {data:newIntake,error:intakeError}=await db.from('client_intake_requests').insert({project_id:project.id,lead_id:project.lead_id||null,client_email:email,token_hash:tokenHash,status:'pending',expires_at:expiresAt,metadata:{source:'autopilot_executor',package_key:project.project_type||null}}).select('*').single()
+        const placeholderHash=await sha256(`pending:${crypto.randomUUID()}`)
+        const {data:newIntake,error:intakeError}=await db.from('client_intake_requests').insert({project_id:project.id,lead_id:project.lead_id||null,client_email:email,token_hash:placeholderHash,status:'pending',expires_at:new Date(Date.now()+7*24*60*60*1000).toISOString(),metadata:{source:'autopilot_executor',package_key:project.project_type||null,delivery_issued:false}}).select('*').single()
         if(intakeError||!newIntake) throw new Error('intake_request_creation_failed');intake=newIntake
       }
 
@@ -126,8 +125,18 @@ Deno.serve(async(req:Request)=>{
       if(checkError) throw new Error('project_checklist_seed_failed')
       const {error:projectUpdateError}=await db.from('projects').update({status:'active',content_status:intake.status==='submitted'?'in_progress':'waiting_client',current_milestone:intake.status==='submitted'?'intake_ready':'client_intake',next_action:intake.status==='submitted'?'prepare_fulfillment_build':'await_client_intake',updated_at:now()}).eq('id',project.id)
       if(projectUpdateError) throw new Error('project_activation_failed')
+
+      let intakeToken:string|null=null,intakeUrl:string|null=null
+      if(intake.status==='pending'){
+        intakeToken=randomToken();const tokenHash=await sha256(intakeToken);const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString()
+        const {error:tokenError}=await db.from('client_intake_requests').update({token_hash:tokenHash,expires_at:expiresAt,updated_at:now(),metadata:{...(intake.metadata||{}),delivery_issued:true,delivery_issued_at:now()}}).eq('id',intake.id).eq('status','pending')
+        if(tokenError) throw new Error('intake_token_issue_failed')
+        intake.expires_at=expiresAt
+        intakeUrl=`https://bwdnorth.com/client-intake.html?t=${encodeURIComponent(intakeToken)}`
+      }
+
       await db.from('activity').insert({entity_type:'project',entity_id:project.id,action:'paid_fulfillment_started',detail:{fulfillment_job_id:job.id,intake_request_id:intake.id,intake_status:intake.status}})
-      return await complete({project_id:project.id,fulfillment_job_id:job.id,intake_request_id:intake.id,intake_status:intake.status,intake_token:intakeToken,intake_expires_at:intake.expires_at,next_stage:intake.status==='submitted'?'intake_ready':'waiting_client_intake',production_release_authorized:false})
+      return await complete({project_id:project.id,fulfillment_job_id:job.id,intake_request_id:intake.id,intake_status:intake.status,intake_token:intakeToken,intake_url:intakeUrl,intake_expires_at:intake.expires_at,next_stage:intake.status==='submitted'?'intake_ready':'waiting_client_intake',production_release_authorized:false})
     }
 
     if(claimed.action_type==='prepare_paid_project_build'){
