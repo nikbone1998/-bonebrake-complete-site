@@ -1,6 +1,21 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": {
+            "re": "^(?!bwdnorth\\.com$|www\\.bwdnorth\\.com$|.*\\.vercel\\.app$).+"
+          }
+        }
+      ],
+      "destination": "/api/client-site"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
