@@ -8,7 +8,8 @@ const required=[
   'supabase/functions/executive-brief/index.ts',
   'supabase/migrations/20260831_phase14_executive_brief_foundation.sql',
   'supabase/migrations/20260831_phase14_executive_brief_metrics.sql',
-  'supabase/migrations/20260831_phase14_executive_brief_schedule.sql'
+  'supabase/migrations/20260831_phase14_executive_brief_schedule.sql',
+  'supabase/migrations/20260831_phase14_executive_brief_rls_hardening.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing executive brief file: ${file}`)}}
 async function read(file){try{return await fs.readFile(path.join(root,file),'utf8')}catch(error){failures.push(`${file} unreadable: ${error.message}`);return ''}}
@@ -32,8 +33,11 @@ for(const marker of ['phase14_executive_brief_metrics','today_cents','seven_day_
 const schedule=await read('supabase/migrations/20260831_phase14_executive_brief_schedule.sql');
 for(const marker of ['bonebrake-executive-brief-hourly','7 * * * *','net.http_post','vault.decrypted_secrets','executive-brief','scheduled'])if(!schedule.includes(marker))failures.push(`Executive brief schedule missing marker: ${marker}`);
 
+const hardening=await read('supabase/migrations/20260831_phase14_executive_brief_rls_hardening.sql');
+for(const marker of ['owner_all_executive_brief_snapshots',"lower((select auth.jwt())->>'email')",'with check'])if(!hardening.includes(marker))failures.push(`Executive brief RLS hardening missing marker: ${marker}`);
+
 const dashboard=await read('dashboard.html');
 for(const marker of ['phase14-executive-brief.css','phase14-executive-brief.js'])if(!dashboard.includes(marker))failures.push(`Dashboard missing executive brief asset: ${marker}`);
 
 if(failures.length){console.error(`Phase 14 executive brief checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 executive brief checks passed: owner-only snapshots, live refresh, Chicago-time scheduling, Vault isolation, revenue/pipeline/delivery/monitoring metrics, priority ranking, and dashboard integration verified.');
+console.log('Phase 14 executive brief checks passed: owner-only snapshots, optimized RLS, live refresh, Chicago-time scheduling, Vault isolation, revenue/pipeline/delivery/monitoring metrics, priority ranking, and dashboard integration verified.');
