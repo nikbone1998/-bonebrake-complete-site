@@ -5,6 +5,7 @@ const clean=(v:unknown,max=500)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,
 const uuidRe=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const now=()=>new Date().toISOString()
 async function sha256(value:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+function jwtAal(jwt:string){try{const part=jwt.split('.')[1];if(!part)return'';const normalized=part.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(part.length/4)*4,'=');const payload=JSON.parse(atob(normalized));return clean(payload?.aal,20)}catch{return''}}
 
 Deno.serve(async(req:Request)=>{
   if(req.method!=='POST') return Response.json({ok:false,error:'method_not_allowed'},{status:405})
@@ -15,6 +16,7 @@ Deno.serve(async(req:Request)=>{
   const db=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}})
   const {data:{user},error:userError}=await db.auth.getUser(jwt)
   if(userError||!user||String(user.email||'').toLowerCase()!==OWNER) return Response.json({ok:false,error:'owner_only'},{status:403})
+  if(jwtAal(jwt)!=='aal2') return Response.json({ok:false,error:'aal2_required'},{status:403,headers:{'Cache-Control':'no-store'}})
   let body:any;try{body=await req.json()}catch{return Response.json({ok:false,error:'invalid_json'},{status:400})}
   const actionId=clean(body?.action_id,80);if(!uuidRe.test(actionId))return Response.json({ok:false,error:'valid_action_id_required'},{status:400})
   const [{data:settings},{data:action}]=await Promise.all([db.from('automation_settings').select('*').eq('key','global').maybeSingle(),db.from('automation_actions').select('*').eq('id',actionId).maybeSingle()])
@@ -37,8 +39,8 @@ Deno.serve(async(req:Request)=>{
   const {data:activation,error:activationError}=await db.rpc('phase14_activate_project_release',{p_release_id:releaseId,p_domain_id:domain.id});if(activationError||!activation)return await fail(clean(activationError?.message||'production_activation_failed',500),false)
   let resolvedText='';try{const smoke=await fetch(`${url}/functions/v1/client-site-resolve?host=${encodeURIComponent(domain.hostname)}`,{method:'GET',signal:AbortSignal.timeout(12000)});if(!smoke.ok)return await fail(`production_internal_smoke_http_${smoke.status}`,true);resolvedText=await smoke.text()}catch(error){return await fail(error instanceof Error?`production_internal_smoke:${error.message}`:'production_internal_smoke_failed',true)}
   const resolvedHash=await sha256(resolvedText);if(resolvedHash!==artifact.content_sha256)return await fail('production_internal_smoke_hash_mismatch',true)
-  const completedAt=now();await db.from('project_release_candidates').update({deployment_health:{status:'healthy',internal_smoke_passed:true,content_sha256:resolvedHash,checked_at:completedAt},updated_at:completedAt}).eq('id',releaseId).eq('is_active',true)
-  await db.from('activity').insert({entity_type:'project',entity_id:projectId,action:'production_smoke_passed',detail:{release_candidate_id:releaseId,domain:domain.hostname,content_sha256:resolvedHash}})
-  const result={...activation,production_deployed:true,internal_smoke_passed:true,content_sha256:resolvedHash};await db.from('automation_actions').update({status:'completed',result,executed_at:completedAt,updated_at:completedAt}).eq('id',action.id).eq('status','executing')
+  const completedAt=now();await db.from('project_release_candidates').update({deployment_health:{status:'healthy',internal_smoke_passed:true,content_sha256:resolvedHash,checked_at:completedAt,owner_aal:'aal2'},updated_at:completedAt}).eq('id',releaseId).eq('is_active',true)
+  await db.from('activity').insert({entity_type:'project',entity_id:projectId,action:'production_smoke_passed',detail:{release_candidate_id:releaseId,domain:domain.hostname,content_sha256:resolvedHash,owner_aal:'aal2'}})
+  const result={...activation,production_deployed:true,internal_smoke_passed:true,content_sha256:resolvedHash,owner_aal:'aal2'};await db.from('automation_actions').update({status:'completed',result,executed_at:completedAt,updated_at:completedAt}).eq('id',action.id).eq('status','executing')
   return Response.json({ok:true,status:'completed',result},{headers:{'Cache-Control':'no-store'}})
 })
