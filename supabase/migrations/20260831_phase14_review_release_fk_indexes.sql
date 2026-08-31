@@ -1,0 +1,2 @@
+create index if not exists project_generated_artifacts_source_action_idx on public.project_generated_artifacts(source_action_id);
+create index if not exists project_revision_requests_applied_artifact_idx on public.project_revision_requests(applied_artifact_id);
