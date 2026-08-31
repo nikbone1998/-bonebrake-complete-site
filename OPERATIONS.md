@@ -1,7 +1,7 @@
-# Bonebrake Web Design — Phase 12 Operations
+# Bonebrake Web Design — Phase 13 Operations
 
-Release: `12.0.0`
-Build: `phase12-six-figure-platform`
+Release: `13.0.0`
+Build: `phase13-six-figure-reality`
 Public application: custom static frontend + bounded Vercel Node APIs
 Persistent operating layer: Supabase Postgres + Auth + Edge Functions
 
@@ -9,184 +9,209 @@ This document describes implemented behavior and known boundaries. A phase name 
 
 ## Public product
 
-Primary surfaces:
+Public/product surfaces include:
 
-- `/` — BWD marketing experience, signature redesign diagnostic, selected-work presentation, persistent-first inquiry flow.
-- `/work.html` — editorial case-study index for the five clearly labeled concept projects.
-- `/case-*.html` — BWD case-study narratives explaining challenge, strategy, information architecture, UX, mobile, trust and conversion decisions without fabricated client results.
-- original concept showcases — Aurelia, Northstar, Oak & Stone, Westside Auto Lab and Lakeview Dental retain distinct industry-specific identities.
-- `/website-audit.html` — live structural audit with persistence, history and privacy-safe share links.
-- `/audit-report.html?token=...` — tokenized, noindex report viewer exposing audit findings only.
-- `/dashboard.html` — noindex private owner application.
+- `/` — BWD marketing experience, signature redesign diagnostic, selected work, persistent-first inquiry flow.
+- `/work.html` and five `case-*.html` pages — editorial concept case studies explaining strategy, information architecture, UX, mobile, trust and conversion decisions without invented results.
+- five distinct showcase sites — Aurelia, Northstar, Oak & Stone, Westside Auto Lab and Lakeview Dental.
+- `/website-audit.html` — live structural audit with persistence, history and share tokens.
+- `/audit-report.html?t=...` — tokenized, noindex audit-report viewer.
+- `/proposal.html?t=...` — tokenized, noindex printable proposal overview.
+- `/dashboard.html` — private owner operating console.
 - `/privacy.html` and `/terms.html`.
 
-Phase 12 preserves the graphite/ivory/stone/muted-bronze studio identity while adding an art-directed hero, custom browser compositions, a signature diagnostic interaction, a dedicated case-study presentation layer and a shared editorial system. Visual spectacle is not treated as business value by itself.
-
-## Performance budget
-
-The previous Northstar showcase was a multi-megabyte single HTML document. Phase 12 rebuilds it as a compact, responsive HVAC concept and enforces a `<100 KB` HTML budget for `northstar.html` in the predeploy gate. No Lighthouse/Core Web Vitals claims are made unless those measurements are actually collected.
+Phase 13 preserves the Phase 12 graphite/ivory/stone/muted-bronze art direction and signature diagnostic. It does not redesign working public surfaces merely to create a new phase.
 
 ## Persistent data plane
 
 Supabase project `usurytofnhhfxxipngdd` stores:
 
-- `leads` — inquiry identity/contact data, attribution, pipeline state, notes, follow-up, priority, estimated value, opportunity score and outcome.
-- `audits` — completed/failed structural audits, report JSON, history, heuristics and random `share_token` values.
-- `projects` — client delivery status, agreed price, deposit/balance, payment state, dates, milestone and notes.
-- `activity` — durable lead/project/audit state events.
-- `analytics_events` — first-party funnel events.
-- `content_items` — published structured business, pricing, FAQ, service and portfolio records.
-- `intake_limits` — hashed request identifiers for bounded public abuse controls.
+- `leads` — identity/contact data, source/UTM attribution, pipeline state, qualification, priority, value, follow-up, next action, notes and outcome/loss context.
+- `audits` — successful/failed audits, measured/heuristic/recommendation reports, history and randomized share tokens.
+- `proposals` — lead-linked scope, package, add-ons, timeline, price, status, sent/decision timestamps, client label and randomized share token.
+- `projects` — lead/proposal linkage, delivery status, agreed price, deposit, balance, explicitly recorded paid amount, payment state, target launch, milestone, domain/content/revision states, next action and notes.
+- `project_checklist` — durable launch-readiness items and recorded states.
+- `activity` — durable lead/audit/proposal/project workflow events.
+- `analytics_events` — bounded first-party funnel events.
+- `content_items` — structured published business, pricing, FAQ, service and portfolio content.
+- `intake_limits` — hashed request identifiers used by server-side abuse controls.
 
-Operational tables use RLS. Anonymous operational CRUD is revoked. Owner policies require an authenticated JWT whose email is `bonebrakewebsitedesign@gmail.com`. Published CMS rows are the deliberate read-only public exception. Browser assets contain only the publishable Supabase key; privileged keys remain server-side.
+Operational tables use RLS. Anonymous operational CRUD is revoked. Owner policies require an authenticated JWT for `bonebrakewebsitedesign@gmail.com`. Public CMS reads are limited to published content. Browser assets contain only the Supabase publishable key; privileged credentials remain server-side.
+
+## CRM and proposal workflow
+
+The owner console continues the real CRM pipeline and adds proposal operations.
+
+Proposal states:
+
+`DRAFT → SENT → ACCEPTED / DECLINED / EXPIRED`
+
+Database workflow behavior:
+
+- proposal status changes create activity events;
+- moving a proposal to `sent` records `sent_at`, moves a non-terminal lead to `proposal`, and records the next action;
+- moving a proposal to `accepted` records the decision, transfers the proposal price to the lead's recorded opportunity value, moves the lead to `won`, and triggers the existing durable WON→project workflow;
+- the created project links back to the accepted proposal;
+- moving a proposal to `declined` records proposal-declined outcome/loss context without inventing a client reason.
+
+A successful disposable QA exercise verified `draft → sent → accepted → won → project`, a `$4,200` proposal-value transfer, proposal/project linkage and automatic launch-checklist seeding. QA records were removed after verification.
+
+The tokenized proposal viewer returns only proposal-facing fields through the `proposal-view` Edge Function. It deliberately excludes lead IDs, CRM records, session identity and owner data. Draft proposals are not returned. The page is a printable proposal overview, not a contract or electronic-signature system.
+
+## Project delivery and launch readiness
+
+Each project records:
+
+- agreed value;
+- deposit/balance;
+- explicit `paid_amount` rather than inferring cash received from contract value;
+- payment state;
+- project stage/milestone;
+- target launch;
+- domain, content and revision status;
+- next action.
+
+Every project receives 17 launch-readiness records covering content, design, mobile QA, forms, contact data, domain, SEO/social metadata, analytics, privacy/terms, accessibility review, performance review, client approval, payment-state review, SSL and production smoke testing.
+
+Readiness percentage is calculated only from checklist rows explicitly marked `complete` or `not_applicable`. It is never inferred from time, project status or estimated progress.
+
+A disposable QA exercise verified project checklist state changes and a calculated `2 / 17 = 11.8%` readiness result. QA records were removed afterward.
+
+## Client portal decision
+
+A separate client portal is deliberately deferred. At the current business scale, a second external authentication/authorization surface adds more security and maintenance complexity than business value. Tokenized proposals plus focused internal delivery operations are the simpler professional architecture.
 
 ## Owner authentication
 
-The dashboard uses Supabase passwordless Auth plus database RLS. Phase 12 changes owner login to `shouldCreateUser:false`; the public dashboard can request a magic link only for the pre-created authorized owner identity and cannot create arbitrary Auth users.
+The dashboard uses Supabase passwordless authentication plus database RLS. Normal login uses `shouldCreateUser:false`; the public dashboard cannot create arbitrary Auth users.
 
 Authorization requires both:
 
-1. a valid authenticated Supabase session for the owner email; and
-2. owner RLS policy approval at the database layer.
+1. an authenticated Supabase session whose email is the authorized owner email; and
+2. database RLS approval.
 
-The dashboard signs out any session whose email is not the authorized owner. Production authentication is not certified until the actual email-link redirect lands on the intended production dashboard and permitted data access/logout are exercised end-to-end.
+**Known boundary:** the owner identity is not yet present in `auth.users`, and the complete email → magic link → production redirect → session → RLS read/write → logout flow is therefore not yet production-certified. A temporary Phase 13 bootstrap path was disabled and its Vercel bridge removed rather than leaving an administrative backdoor active.
 
-## First-party inquiry flow
+## First-party lead pipeline
 
-The primary flow remains persistence-first:
+The primary inquiry path remains persistence-first:
 
-1. browser validation and anti-bot fields;
-2. `lead-intake` Edge Function origin/application-key/payload/timing/rate checks;
-3. normalized lead persistence;
-4. activity + attribution event creation;
-5. explicit success only after durable storage;
-6. FormSubmit used secondarily as owner notification and as the browser emergency route if the first-party data plane fails;
-7. explicit direct-contact failure state if both paths fail.
-
-A lead must never be intentionally acknowledged as safely received before durable storage or a clearly identified backup delivery succeeds.
-
-## Business workflow automation
-
-Database triggers remain independent of dashboard JavaScript:
-
-- lead status changes create activity records;
-- entering `WON` creates one project for that lead if one does not already exist;
-- the project inherits the lead's recorded estimated value for owner review;
-- project state/payment/milestone changes create activity events.
-
-The owner dashboard manages pipeline status, priority, estimated value, follow-up, notes, project stages, payment state, milestones, audits, analytics and structured content. Metrics distinguish recorded estimates, agreed project value and projects explicitly marked paid; they do not infer revenue that was never recorded.
+1. browser validation and bot fields;
+2. `lead-intake` Edge Function origin/application-key/payload/timing/rate controls;
+3. normalized Postgres persistence;
+4. activity and attribution event creation;
+5. success only after durable storage;
+6. existing FormSubmit path used secondarily for owner notification/emergency delivery;
+7. explicit direct-contact failure state if durable storage and backup delivery both fail.
 
 ## Website audit product
 
-The safety-critical fetch engine remains Vercel `/api/audit` with HTTP/HTTPS-only targets, credential rejection, DNS/private-network validation, rebinding protection, redirect revalidation, body/time/concurrency/rate limits and HTML-only processing.
+The Vercel `/api/audit` fetch engine retains public-target-only validation, credential rejection, private/link-local/metadata blocking, DNS-rebinding protection, redirect revalidation, bounded response size/time/rate/concurrency and HTML-only processing.
 
-Supabase `audit-run` adds:
+Supabase `audit-run` adds persistence, measured/heuristic/recommendation classification, redesign-opportunity heuristic, previous-run comparison, activity/analytics events and randomized share tokens.
 
-- persistence of successful and failed runs;
-- measured / heuristic / recommendation classification;
-- directional redesign-opportunity heuristic;
-- previous-run comparison by host;
-- activity and attribution events;
-- random audit share tokens.
+The `audit-report` Edge Function returns only report-safe fields for a valid share token and does not expose requester identity, lead linkage, sessions or CRM data. No Lighthouse, Core Web Vitals, ranking, traffic, conversion, WCAG certification or business-outcome claim is fabricated.
 
-The `audit-report` Edge Function accepts a valid random share token and returns only sanitized public-report fields: timestamp, audited URL/host, status, heuristic score, summary and report JSON. It does **not** return requested-by identity, owner data, session IDs, lead linkage or CRM records. The share viewer is `noindex,nofollow,noarchive` and is excluded from the sitemap.
+## Analytics truthfulness
 
-The audit does not fabricate Lighthouse scores, Core Web Vitals, traffic, rankings, conversion rates, WCAG certification or business outcomes.
+The operating funnel can combine:
 
-## Analytics / attribution
+`VISIT → CTA → AUDIT → INQUIRY → QUALIFIED → PROPOSAL → WON → PROJECT → PAID`
 
-Allowed first-party event classes remain:
+Important financial distinctions:
 
-- `page_view`
-- `cta_click`
-- `audit_start`
-- `audit_complete`
-- `inquiry_submit`
-- `inquiry_complete`
+- lead `estimated_value` = pipeline/opportunity estimate;
+- proposal `total_price` = proposed value;
+- project `agreed_price` = recorded booked project value;
+- project `paid_amount` = explicitly recorded cash received.
 
-The dashboard combines events with lead/project records to show tracked sessions, CTA interactions, stored inquiries, qualification, proposals, won clients, pipeline estimates, booked project value and paid value where explicitly recorded.
+The application must not call agreed contract value paid revenue merely because a project exists.
 
 ## CMS
 
-Published content now includes structured records for business profile, pricing, FAQ, core services and portfolio metadata. Homepage pricing/FAQ/contact data can refresh from published records while static HTML remains a resilient fallback. Owner edits remain RLS-protected.
+Structured CMS support covers business profile, pricing, FAQ, services and portfolio metadata/content. Static fallback content remains for public resilience. It is intentionally structured rather than a generic drag-and-drop builder.
 
-The CMS intentionally remains structured rather than becoming a generic drag-and-drop site builder.
+## Health and observability
 
-## Health / observability
+Vercel `GET /api/health` identifies release `13.0.0`, build `phase13-six-figure-reality`, exposes the Vercel Git commit when available, and calls Supabase `system-health`.
 
-`GET /api/health` identifies release `12.0.0`, build `phase12-six-figure-platform` and calls Supabase `system-health`. Healthy status requires the persistent data plane to be reachable. The response reports environment/region, release identity, data-plane status/latency/table counts, lead mode, audit mode, analytics mode, owner-operations mode and portfolio mode. Data-plane failure produces degraded `503` rather than a false healthy state.
+Supabase `system-health` calls the restricted `phase13_health_counts()` RPC and reports database reachability plus counts for leads, audits, projects, proposals, project checklist, activity, analytics and content. The RPC is `SECURITY DEFINER` because it is a server-side health probe, but execute permission is revoked from public/anon/authenticated roles and granted only to `service_role`.
 
-Vercel runtime/build logs and Supabase service logs remain the primary operational diagnostics.
+Data-plane failure causes degraded `503`, not a false healthy response.
 
 ## Security baseline
 
-Controls include:
+Current controls include:
 
-- HSTS, `nosniff`, SAMEORIGIN framing, strict-origin referrer and restrictive permissions headers;
-- SSRF/private-network/DNS-rebinding controls on website audits;
-- payload/rate/concurrency/timing limits on public operations;
-- hashed rate-limit identifiers;
-- RLS and revoked anonymous operational access;
-- owner identity enforced by Auth and database policy;
-- `shouldCreateUser:false` on owner passwordless login;
-- no privileged browser credentials;
-- tokenized audit sharing with sanitized server response;
-- private dashboard/share surfaces excluded from search discovery;
-- predeploy scans for privileged credential markers.
+- HSTS, `nosniff`, SAMEORIGIN framing policy, strict-origin referrer and restrictive permissions headers;
+- SSRF/private-network/DNS-rebinding protections on audits;
+- request/payload/rate/timing/concurrency controls on bounded public operations;
+- hashed abuse-control identifiers;
+- RLS and revoked anonymous operational CRUD;
+- owner identity authorization at database policy level;
+- `shouldCreateUser:false` for normal dashboard auth;
+- no privileged Supabase credentials in browser assets;
+- tokenized audit/proposal sharing with sanitized server responses;
+- dashboard/audit-report/proposal surfaces excluded from sitemap and crawler rules;
+- CI scans for privileged client-credential markers;
+- temporary auth bootstrap route removed/disabled after it could not be safely certified.
 
-A strict CSP is not claimed until the external image/CDN and inline-style dependency inventory can be verified without breaking production.
+Latest Supabase security advisor shows only the intentional informational notice that `intake_limits` has RLS with no client policy. That table is intended to have no client access. Latest performance advisor has no warnings after optimizing new owner policies; remaining notices are unused-index informational findings on a nearly empty database.
 
-## Accessibility / responsive UX
+## Accessibility and performance
 
-Implemented/source-verified controls include skip links, focus-visible treatment, reduced-motion behavior, ARIA state for interactive controls, responsive audit/dashboard layouts, mobile quick actions and responsive case-study/diagnostic layouts. Phase 12 explicitly targets approximately 360/390/393/402/430px mobile widths in visual QA.
+Existing skip-link/focus/reduced-motion/ARIA/responsive work is preserved. Phase 13 adds bounded responsive dashboard/proposal surfaces and print styling.
 
-These controls are meaningful improvements but are not a formal WCAG 2.2 AA certification without actual manual assistive-technology/keyboard review.
+Northstar remains protected by the `<100 KB` HTML regression budget. Phase 13 also budgets its additive CSS/dashboard/proposal assets. These are source/build safeguards, not fabricated Lighthouse or Core Web Vitals claims.
 
-## SEO / discovery
+Formal WCAG 2.2 AA certification and real browser/Lighthouse measurements are not claimed without actual browser/assistive verification.
 
-The sitemap now includes the public case-study index, five case-study pages, audit product and original concept showcases. The dashboard and tokenized report viewer remain excluded. Case-study pages use truthful concept labels and canonical metadata. No fake reviews, aggregate ratings, locations or results are published.
+## SEO and private discovery
+
+The public sitemap includes the marketing site, audit, work/case-study pages and concept showcases. `dashboard.html`, `audit-report.html` and `proposal.html` are excluded from the sitemap, marked noindex where applicable, and disallowed in `robots.txt` as defense in depth. No fake reviews, locations, aggregate ratings or outcomes are published.
 
 ## Build / release gate
 
-`npm run vercel-build` → `npm run predeploy` → static checks + Node tests.
+`npm run vercel-build` → `npm run predeploy` → static integrity checks + Node tests.
 
-Phase 12 static checks require:
+Phase 13 checks require:
 
-- release identity `12.0.0`;
-- Phase 12 CI/build identity;
-- public marketing/case-study/audit/dashboard assets;
-- persistent lead and analytics wiring;
-- signature diagnostic/case-study routing;
-- Northstar `<100 KB` budget;
-- owner signup disabled;
-- share-report privacy contracts;
-- sitemap/private-surface separation;
-- security headers and absence of privileged client credentials.
+- release `13.0.0` / build `phase13-six-figure-reality`;
+- existing Phase 12 diagnostic and five case studies;
+- persistent-first lead and analytics wiring;
+- audit share privacy;
+- owner arbitrary-signup disabled;
+- proposal + project-checklist dashboard wiring;
+- tokenized/noindex proposal viewer with no private-field dependencies;
+- explicit paid amount and recorded-state launch readiness;
+- Northstar and Phase 13 asset byte budgets;
+- private-surface search exclusion;
+- no temporary owner-bootstrap bridge;
+- security headers and no privileged browser credentials.
 
-Node tests retain the audit/lead abuse controls and add Phase 12 product/auth/performance/SEO/privacy contracts. Test count is not itself considered quality; coverage is intended to protect critical behavior.
+A verified Phase 13 Vercel preview on commit `813268eb51df483e5ae57a54a696e70fd5b5070d` completed its build with 37 required-file/static contracts and 29/29 tests passing. Any later documentation/release-cleanup commit must receive a new green preview before replacing that candidate as the verified source of truth.
 
 ## Release discipline
 
-1. Phase 12 source work occurs on `phase12-legitimate-110k`, not production `main`.
-2. Every candidate must pass Vercel build/static/test gates.
-3. Preview runtime health and data-plane health must be green.
-4. Exercise homepage, work/case studies, audit, share report and dashboard unauthenticated state.
-5. Exercise QA lead persistence, analytics, audit persistence/history/share retrieval and WON→project automation using clearly labeled records, then remove QA records.
-6. Exercise owner authentication with the real authorized account and verify RLS-protected read/write + logout.
-7. Perform responsive/browser QA where tooling permits.
-8. Inspect Vercel/Supabase runtime and security advisors.
-9. Remove temporary QA endpoints and credentials before final candidate verification.
-10. Verify the canonical `bwdnorth.com` domain maps to the intended Vercel project/commit before production promotion.
-11. Promote only a verified commit; run post-production smoke checks.
-12. Roll back to the last known healthy production deployment if promotion regresses critical behavior.
+1. Phase 13 work occurs on `phase13-six-figure-reality`, not production `main`.
+2. GitHub and Vercel predeploy gates must be green.
+3. Preview `/api/health` and Supabase data-plane health must be healthy.
+4. Exercise public homepage, case studies, audit, tokenized report/proposal states and dashboard unauthenticated state.
+5. Use clearly labeled disposable QA data for destructive workflow tests; remove it afterward.
+6. Complete owner magic-link/RLS/logout certification before counting owner auth complete.
+7. Perform real desktop/mobile browser QA when browser tooling can reach the preview.
+8. Review Vercel runtime errors and Supabase advisors after QA.
+9. Promote only a verified commit.
+10. Confirm `bwdnorth.com` serves the intended commit before production certification.
 
 ## Known boundaries
 
-- **Custom-domain mapping:** current connected Vercel project metadata does not list `bwdnorth.com`. Production cannot be called complete until DNS/project association is proven and the public domain serves the intended commit.
-- **Auth redirect configuration:** the owner identity and code path are not sufficient by themselves; actual magic-link redirect/session behavior must be exercised against the intended domain.
-- **Email notification:** durable Postgres storage is primary. FormSubmit remains a secondary browser notification/emergency provider, not a guaranteed server-to-server notification service.
-- **Formal WCAG:** not claimed without real manual/browser/assistive review.
-- **Lighthouse/CWV:** not claimed without real measurement.
-- **Legal review:** published privacy/terms are not a substitute for professional legal advice.
+- **Production domain:** the connected Vercel project still does not list `bwdnorth.com` as a project domain. The public custom domain currently serves an older release. Production mapping must be resolved before Phase 13 can be production-certified.
+- **Owner authentication:** the authorized owner Auth identity does not yet exist; end-to-end magic-link/RLS/logout certification remains incomplete.
+- **Browser QA:** source/build responsive controls are real, but multi-viewport screenshot/interaction certification remains incomplete until browser tooling can exercise the protected preview.
+- **Email notification:** Postgres persistence is primary; FormSubmit remains secondary browser notification/emergency delivery rather than guaranteed server-to-server notification.
+- **Formal accessibility / Lighthouse / CWV:** not claimed without real measurements/review.
+- **Client portal:** deliberately not implemented because its current business utility does not justify the additional external auth surface.
+- **Legal review:** published privacy/terms and proposal language are not a substitute for professional legal review.
 
-No known boundary may be converted into a completion claim by changing documentation, version strings or the phase name.
+No known boundary may be converted into a completed claim by changing documentation, version strings, branch names or valuation targets.
