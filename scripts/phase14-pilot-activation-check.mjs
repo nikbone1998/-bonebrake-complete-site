@@ -5,10 +5,12 @@ const root=process.cwd();
 const failures=[];
 const migration='supabase/migrations/20260831_phase14_pilot_activation_package.sql';
 const acl='supabase/migrations/20260831_phase14_pilot_rpc_acl_hardening.sql';
+const checkout='supabase/migrations/20260831_phase14_pilot_checkout_binding.sql';
 const control='supabase/functions/pilot-control/index.ts';
 async function read(file){try{return await fs.readFile(path.join(root,file),'utf8')}catch{failures.push(`Missing pilot file: ${file}`);return ''}}
 const sql=await read(migration);
 const aclSql=await read(acl);
+const checkoutSql=await read(checkout);
 const api=await read(control);
 
 for(const marker of [
@@ -32,6 +34,13 @@ for(const marker of [
 ]) if(!aclSql.includes(marker)) failures.push(`Pilot RPC ACL hardening missing marker: ${marker}`);
 
 for(const marker of [
+  'phase14_enforce_pilot_checkout_session','pilot_active_plan_required','pilot_payment_link_not_authorized',
+  'pilot_package_not_authorized','first_paid_project_claimed','pilot_capacity_reached',
+  'claimed_checkout_session_id=new.stripe_checkout_session_id','claimed_project_id=new.project_id',
+  'payments_enabled=false','phase14_pilot_checkout_session_guard'
+]) if(!checkoutSql.includes(marker)) failures.push(`Pilot checkout binding missing safety marker: ${marker}`);
+
+for(const marker of [
   "const OWNER='bonebrakewebsitedesign@gmail.com'",'db.auth.getUser(jwt)','allowedChecks',
   "action==='arm'",'pilot_not_ready','activate_single_customer_pilot','max_paid_projects:1','max_concurrent_projects:1',
   "prospecting, outreach, auto-reply",'phase14_activate_single_customer_pilot','phase14_halt_single_customer_pilot'
@@ -42,4 +51,4 @@ if(api.includes("single_customer_checkout_ready:true")) failures.push('Pilot con
 if(api.includes("ai_runtime_certified:true")) failures.push('Pilot control must not hard-code AI runtime certification true.');
 
 if(failures.length){console.error(`Phase 14 pilot activation checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 pilot activation checks passed: one-customer caps, external-effects lock, service-only pilot RPCs, owner activation, checkout claim, and emergency halt contracts verified.');
+console.log('Phase 14 pilot activation checks passed: one-customer caps, external-effects lock, service-only pilot RPCs, single-use checkout binding, owner activation, and emergency halt contracts verified.');
