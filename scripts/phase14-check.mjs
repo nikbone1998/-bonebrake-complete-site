@@ -12,7 +12,8 @@ const required=[
   'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql',
   'supabase/migrations/20260831_phase14_prospect_audit_approval_handoff.sql',
   'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql',
-  'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql'
+  'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql',
+  'supabase/migrations/20260831_phase14_preview_factory_jobs.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
@@ -43,7 +44,8 @@ try{
 
 try{
   const executor=await fs.readFile(path.join(root,'supabase/functions/autopilot-execute/index.ts'),'utf8');
-  for(const marker of ['owner_only','action_not_approved','autopilot_disabled','prospecting_disabled',"status:'executing'","status:'completed'","status:'failed'",'run_prospect_audit','promote_prospect_to_crm'])if(!executor.includes(marker))failures.push(`Autopilot executor missing safeguard/lifecycle marker: ${marker}`);
+  for(const marker of ['owner_only','action_not_approved','autopilot_disabled','prospecting_disabled',"status:'executing'","status:'completed'","status:'failed'",'run_prospect_audit','promote_prospect_to_crm','crmQualification'])if(!executor.includes(marker))failures.push(`Autopilot executor missing safeguard/lifecycle marker: ${marker}`);
+  if(!executor.includes("candidate.qualification_tier==='A'?'high':'medium'")) failures.push('Executor does not map A/B prospect tiers to valid CRM qualification values');
   if(!executor.includes(".eq('status','approved')")) failures.push('Executor does not atomically claim only approved actions');
   if(!executor.includes(".eq('status','executing')")) failures.push('Executor completion/failure does not guard executing state');
 }catch(error){failures.push(`Autopilot executor validation failed: ${error.message}`)}
@@ -69,6 +71,13 @@ try{
 }catch(error){failures.push(`Prospect scoring hardening validation failed: ${error.message}`)}
 
 try{
+  const preview=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_preview_factory_jobs.sql'),'utf8');
+  for(const marker of ['prospect_preview_jobs','owner_all_prospect_preview_jobs','prospect_ready_for_preview','phase14_queue_ready_previews','build_prospect_preview','preview_generation_only',"'approval'","security_invoker=true"]){if(!preview.includes(marker))failures.push(`Preview Factory migration missing marker: ${marker}`)}
+  if(!preview.includes("l.next_action='prepare_preview'")) failures.push('Preview Factory does not require the CRM prepare_preview state');
+  if(!preview.includes("status in ('queued','generating','generated','qa','ready_for_review','approved')")) failures.push('Preview Factory active-job dedupe guard is missing');
+}catch(error){failures.push(`Preview Factory validation failed: ${error.message}`)}
+
+try{
   await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
   failures.push('Temporary Phase 13 owner bootstrap bridge must not ship in Phase 14');
 }catch{}
@@ -83,4 +92,4 @@ if(failures.length){
   for(const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, credential, and CI safeguards).`);
+console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, credential, and CI safeguards).`);
