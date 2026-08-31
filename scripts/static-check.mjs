@@ -18,6 +18,7 @@ const required = [
   'api/health.js',
   'api/audit.js',
   'api/lead.js',
+  '.github/workflows/phase11-ci.yml',
   '.well-known/security.txt',
   'OPERATIONS.md'
 ];
@@ -42,6 +43,13 @@ for (const header of ['x-content-type-options','x-frame-options','referrer-polic
 }
 
 try {
+  const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  if (pkg.version !== '11.0.0') failures.push(`package.json release must be 11.0.0, found ${pkg.version || 'missing'}`);
+} catch (error) {
+  failures.push(`package.json is invalid: ${error.message}`);
+}
+
+try {
   const index = await fs.readFile(path.join(root, 'index.html'), 'utf8');
   for (const text of ['Bonebrake Web Design','331-203-3717','BonebrakeWebsiteDesign@gmail.com']) {
     if (!index.includes(text)) failures.push(`index.html missing required business identity: ${text}`);
@@ -62,6 +70,12 @@ try {
   if (!health.includes("const RELEASE = '11.0.0'")) failures.push('health endpoint does not identify release 11.0.0');
   if (!health.includes('/functions/v1/system-health')) failures.push('health endpoint does not verify the persistent data plane');
   if (/pre-phase8|phase8_complete|frontend_sync_pending/.test(health)) failures.push('health endpoint contains stale Phase 8 release state');
+} catch {}
+
+try {
+  const workflow = await fs.readFile(path.join(root, '.github/workflows/phase11-ci.yml'), 'utf8');
+  if (!/Phase 11 Predeploy/.test(workflow)) failures.push('CI workflow does not identify the Phase 11 release gate');
+  if (!/phase11-\*/.test(workflow)) failures.push('CI workflow does not run on Phase 11 branches');
 } catch {}
 
 try {
