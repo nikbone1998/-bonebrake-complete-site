@@ -5,13 +5,14 @@ const KEY='sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
 const OWNER='bonebrakewebsitedesign@gmail.com';
 const db=createClient(SB,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const when=v=>v?new Date(v).toLocaleString():'—';
 
 let session=null;
 let actionRows=[];
 let settings=null;
 let pollTimer=null;
+let initialRouteApplied=false;
 
 function mount(){
   const tabs=document.querySelector('.dashboard-tabs');
@@ -70,10 +71,11 @@ function mount(){
   $('autopilotQueue')?.addEventListener('click',handleDecision);
 }
 
-function activateTab(){
+function activateTab(refresh=true){
   document.querySelectorAll('.dashboard-tabs button').forEach(x=>x.classList.toggle('active',x.id==='autopilotTab'));
   document.querySelectorAll('.dashboard-view').forEach(v=>v.classList.toggle('active',v.id==='view-autopilot'));
-  loadAutopilot();
+  location.hash='autopilot';
+  if(refresh) loadAutopilot();
 }
 
 function metric(label,value,sub=''){
@@ -153,6 +155,11 @@ async function loadAutopilot(){
   actionRows=actionsRes.data||[];
   settings=settingsRes.data||null;
   render();
+  if(!initialRouteApplied){
+    initialRouteApplied=true;
+    const pendingCount=actionRows.filter(a=>a.status==='pending').length;
+    if(location.hash==='#autopilot'||pendingCount>0) activateTab(false);
+  }
 }
 
 async function handleDecision(e){
