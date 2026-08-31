@@ -38,7 +38,8 @@ const criticalFunctions={
   'supabase/functions/autopilot-execute/index.ts':['owner_or_retry_worker_required','retry_context_not_dispatching','retry_engine_worker_secret','db.auth.getUser'],
   'supabase/functions/monitoring-run/index.ts':['monitor_worker_secret','x-bonebrake-monitor-key','monitor_auth_required','db.auth.getUser'],
   'supabase/functions/retry-run/index.ts':['retry_engine_worker_secret','x-bonebrake-retry-key','retry_engine_auth_required','db.auth.getUser'],
-  'supabase/functions/pilot-control/index.ts':['owner_auth_required','db.auth.getUser(jwt)',"action==='arm'",'phase14_halt_single_customer_pilot']
+  'supabase/functions/pilot-control/index.ts':['owner_auth_required','db.auth.getUser(jwt)','jwtAal',"action==='arm'","action==='activate'",'auth_security_reviewed',"jwtAal(jwt)!=='aal2'",'aal2_required','phase14_halt_single_customer_pilot'],
+  'supabase/functions/production-deploy-execute/index.ts':['owner_only','db.auth.getUser(jwt)','jwtAal',"jwtAal(jwt)!=='aal2'",'aal2_required','deploy_paid_project_production']
 };
 for(const [file,markers] of Object.entries(criticalFunctions)){
   const src=await read(file);
@@ -73,4 +74,4 @@ for(const full of await walk(root)){
 }
 
 if(failures.length){console.error(`Phase 14 security hardening checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 security hardening checks passed: least-privilege defaults, anonymous surface reduction, trigger RPC lockdown, Auth pilot gate, critical custom-auth markers, and repository secret-literal scan verified.');
+console.log('Phase 14 security hardening checks passed: least-privilege defaults, anonymous surface reduction, trigger RPC lockdown, Auth pilot gate, AAL2/MFA requirements for pilot activation and production, critical custom-auth markers, and repository secret-literal scan verified.');
