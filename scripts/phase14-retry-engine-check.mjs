@@ -16,18 +16,15 @@ const required=[
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing retry-engine file: ${file}`)}}
 async function read(file){try{return await fs.readFile(path.join(root,file),'utf8')}catch(error){failures.push(`${file} unreadable: ${error.message}`);return ''}}
-for(const file of ['phase14-executive-brief.js'])try{execFileSync(process.execPath,['--check',path.join(root,file)],{stdio:'pipe'})}catch(error){failures.push(`${file} syntax invalid: ${String(error.stderr||error.message).trim()}`)}
+try{execFileSync(process.execPath,['--check',path.join(root,'phase14-executive-brief.js')],{stdio:'pipe'})}catch(error){failures.push(`phase14-executive-brief.js syntax invalid: ${String(error.stderr||error.message).trim()}`)}
 
 const foundation=await read('supabase/migrations/20260831_phase14_generalized_retry_engine_foundation.sql');
 for(const marker of ['automation_retry_policies','automation_retry_jobs','automation_retry_attempts','automation_dead_letters','retry_engine_enabled','auto_retry_enabled','retry_engine_worker_secret','bonebrake_retry_engine_worker_secret','vault.create_secret','owner_all_automation_retry_jobs','owner_all_automation_dead_letters'])if(!foundation.includes(marker))failures.push(`Retry foundation missing marker: ${marker}`);
 if(/bonebrake_retry_engine_worker_secret'\s*,\s*'[a-f0-9]{32,}/i.test(foundation))failures.push('Retry worker secret appears hardcoded in source');
 
-const mustManual=[
-  'start_paid_project_fulfillment','apply_paid_project_revision','review_paid_project_preview','approve_paid_project_release',
-  'deploy_paid_project_production','attach_client_domain_to_vercel','review_failed_payment','review_refunded_project'
-];
-for(const action of mustManual){const re=new RegExp(`\\('${action.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}'[^\\n]*true,false,0,`);if(!re.test(foundation))failures.push(`${action} is not explicitly manual-only with zero automatic attempts`)}
-for(const action of ['run_prospect_audit','promote_prospect_to_crm','prepare_paid_project_build','generate_paid_project_build']){const re=new RegExp(`\\('${action}'[^\\n]*true,true,[1-9]`);if(!re.test(foundation))failures.push(`${action} is not explicitly configured as bounded safe auto-retry`)}
+const mustManual=['start_paid_project_fulfillment','apply_paid_project_revision','review_paid_project_preview','approve_paid_project_release','deploy_paid_project_production','attach_client_domain_to_vercel','review_failed_payment','review_refunded_project'];
+for(const action of mustManual)if(!foundation.includes(`('${action}'`)||!new RegExp(`\\('${action}'[^\\n]*true,false,0,`).test(foundation))failures.push(`${action} is not explicitly manual-only with zero automatic attempts`);
+for(const action of ['run_prospect_audit','promote_prospect_to_crm','prepare_paid_project_build','generate_paid_project_build'])if(!new RegExp(`\\('${action}'[^\\n]*true,true,[1-9]`).test(foundation))failures.push(`${action} is not explicitly configured as bounded safe auto-retry`);
 if(!foundation.includes("'generate_paid_project_build','/functions/v1/generate-project-build',true,true,3")||!foundation.includes("'reset_generation_job'"))failures.push('Generation retry reset policy missing');
 
 const schedule=await read('supabase/migrations/20260831_phase14_generalized_retry_engine_schedule.sql');
@@ -35,13 +32,14 @@ for(const marker of ['internal.phase14_invoke_retry_worker','bonebrake_retry_eng
 if(schedule.includes('insert into cron.job')||schedule.includes('update cron.job'))failures.push('Retry scheduler mutates cron.job directly instead of cron.schedule');
 
 const worker=await read('supabase/functions/retry-run/index.ts');
-for(const marker of ['retry_engine_auth_required','x-bonebrake-retry-key','automation_retry_policies','automation_retry_jobs','automation_retry_attempts','automation_dead_letters','investigate_retry_dead_letter','capability_kill_switch_off','backoff_multiplier','jitter_percent','non_retryable_error_patterns','attempts_exhausted','reset_generation_job','status:\'dispatching\''])if(!worker.includes(marker))failures.push(`Retry worker missing safeguard: ${marker}`);
+for(const marker of ['retry_engine_auth_required','x-bonebrake-retry-key','automation_retry_policies','automation_retry_jobs','automation_retry_attempts','automation_dead_letters','investigate_retry_dead_letter','capability_kill_switch_off','backoff_multiplier','jitter_percent','non_retryable_error_patterns','attempts_exhausted','reset_generation_job',"status:'dispatching'"])if(!worker.includes(marker))failures.push(`Retry worker missing safeguard: ${marker}`);
 for(const forbidden of ['sk_live_','sk_test_','whsec_','sb_secret_','SUPABASE_SERVICE_ROLE_KEY','VERCEL_TOKEN'])if(worker.includes(forbidden))failures.push(`Retry worker contains privileged secret marker: ${forbidden}`);
-if(worker.includes("deploy_paid_project_production')")||worker.includes("review_failed_payment')")||worker.includes("review_refunded_project')"))failures.push('High-risk action appears in retry worker executable allowlist');
+for(const forbidden of ['deploy_paid_project_production','review_failed_payment','review_refunded_project','start_paid_project_fulfillment'])if(worker.includes(`new Set(['${forbidden}`))failures.push(`High-risk action appears in retry worker executable allowlist: ${forbidden}`);
 
 const autopilot=await read('supabase/functions/autopilot-execute/index.ts');
 for(const marker of ['RETRYABLE_ACTIONS','run_prospect_audit','promote_prospect_to_crm','prepare_paid_project_build','x-bonebrake-retry-key','retry_job_id','retry_context_not_dispatching',"eq('status','dispatching')",'autopilot_disabled','prospecting_disabled','fulfillment_disabled'])if(!autopilot.includes(marker))failures.push(`Autopilot executor retry boundary missing marker: ${marker}`);
-for(const forbidden of ["RETRYABLE_ACTIONS=new Set(['deploy_paid_project_production'","RETRYABLE_ACTIONS=new Set(['start_paid_project_fulfillment'"])if(autopilot.includes(forbidden))failures.push(`Autopilot retry allowlist contains high-risk action: ${forbidden}`);
+const allowlistMatch=autopilot.match(/RETRYABLE_ACTIONS=new Set\((\[[^\n]+\])\)/);
+if(!allowlistMatch)failures.push('Autopilot retry allowlist not found');else for(const forbidden of ['deploy_paid_project_production','start_paid_project_fulfillment','approve_paid_project_release','apply_paid_project_revision'])if(allowlistMatch[1].includes(forbidden))failures.push(`Autopilot retry allowlist contains high-risk action: ${forbidden}`);
 
 const generation=await read('supabase/functions/generate-project-build/index.ts');
 for(const marker of ['x-bonebrake-retry-key','retry_job_id','retry_context_not_dispatching',"eq('status','dispatching')",'generate_paid_project_build','preview_only_spec_required','production_release_authorized!==false','fulfillment_disabled'])if(!generation.includes(marker))failures.push(`Generation executor retry boundary missing marker: ${marker}`);
