@@ -4,7 +4,12 @@ import {execFileSync} from 'node:child_process';
 
 const root=process.cwd();
 const failures=[];
-const required=['phase14-autopilot.js','phase14-autopilot.css'];
+const required=[
+  'phase14-autopilot.js',
+  'phase14-autopilot.css',
+  'supabase/functions/prospect-stage/index.ts',
+  'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql'
+];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
 try{
@@ -26,6 +31,17 @@ try{
 }catch(error){failures.push(`Autopilot source validation failed: ${error.message}`)}
 
 try{
+  const stage=await fs.readFile(path.join(root,'supabase/functions/prospect-stage/index.ts'),'utf8');
+  for(const marker of ['OWNER=',"prospecting_enabled",'dry_run','prospecting_disabled','authentication_required','owner_only','batch_too_large'])if(!stage.includes(marker))failures.push(`Prospect staging function missing safeguard: ${marker}`);
+  if(!stage.includes("raw.length>100")) failures.push('Prospect staging batch limit is missing');
+}catch(error){failures.push(`Prospect staging validation failed: ${error.message}`)}
+
+try{
+  const migration=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql'),'utf8');
+  for(const marker of ['qualification_tier','score_breakdown','phase14_score_prospect_candidate','prospect_ready_for_audit','security_invoker=true',"qualification_tier in ('A','B')"]){if(!migration.includes(marker))failures.push(`Prospect qualification migration missing marker: ${marker}`)}
+}catch(error){failures.push(`Prospect qualification validation failed: ${error.message}`)}
+
+try{
   await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
   failures.push('Temporary Phase 13 owner bootstrap bridge must not ship in Phase 14');
 }catch{}
@@ -40,4 +56,4 @@ if(failures.length){
   for(const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, credential, and CI safeguards).`);
+console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, credential, and CI safeguards).`);
