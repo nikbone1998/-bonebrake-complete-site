@@ -5,7 +5,7 @@ const KEY='sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
 const OWNER='bonebrakewebsitedesign@gmail.com';
 const db=createClient(SB,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const when=v=>v?new Date(v).toLocaleString():'—';
 
 let session=null;
@@ -91,16 +91,16 @@ function render(){
   if(!$('view-autopilot')) return;
   const pending=actionRows.filter(a=>a.status==='pending');
   const approved=actionRows.filter(a=>a.status==='approved');
-  const errors=actionRows.filter(a=>a.status==='error');
+  const failures=actionRows.filter(a=>a.status==='failed');
   const today=new Date(); today.setHours(0,0,0,0);
-  const executedToday=actionRows.filter(a=>a.status==='executed'&&a.executed_at&&new Date(a.executed_at)>=today).length;
+  const completedToday=actionRows.filter(a=>a.status==='completed'&&a.executed_at&&new Date(a.executed_at)>=today).length;
   $('autopilotTabCount').textContent=String(pending.length);
   $('autopilotTabCount').hidden=pending.length===0;
   $('autopilotMetrics').innerHTML=[
     metric('Waiting for you',pending.length,'Pending owner decisions'),
     metric('Approved / queued',approved.length,'Approved but not yet executed'),
-    metric('Executed today',executedToday,'Completed automation actions'),
-    metric('Errors',errors.length,'Requires investigation')
+    metric('Executed today',completedToday,'Completed automation actions'),
+    metric('Errors',failures.length,'Requires investigation')
   ].join('');
 
   const anyEnabled=settings&&['autopilot_enabled','prospecting_enabled','outreach_enabled','auto_reply_enabled','payments_enabled','fulfillment_enabled','production_deploy_enabled'].some(k=>settings[k]);
@@ -123,7 +123,7 @@ function render(){
   $('autopilotQueue').innerHTML=pending.length?pending.map(actionCard).join(''):'<div class="p14-zero"><strong>Nothing needs you.</strong><span>The system has no pending owner decisions.</span></div>';
 
   const recent=actionRows.filter(a=>a.status!=='pending').slice(0,10);
-  $('autopilotRecent').innerHTML=recent.length?recent.map(a=>`<div class="p14-recent-row"><div><strong>${esc(a.title)}</strong><small>${esc(a.action_type.replaceAll('_',' '))} · ${esc(when(a.updated_at))}</small></div><span class="p11-status ${a.status==='executed'?'ok':a.status==='error'?'bad':a.status==='rejected'?'warn':''}">${esc(a.status)}</span></div>`).join(''):'<div class="p11-empty">No owner decisions recorded yet.</div>';
+  $('autopilotRecent').innerHTML=recent.length?recent.map(a=>`<div class="p14-recent-row"><div><strong>${esc(a.title)}</strong><small>${esc(a.action_type.replaceAll('_',' '))} · ${esc(when(a.updated_at))}</small></div><span class="p11-status ${a.status==='completed'?'ok':a.status==='failed'?'bad':a.status==='rejected'?'warn':''}">${esc(a.status)}</span></div>`).join(''):'<div class="p11-empty">No owner decisions recorded yet.</div>';
 }
 
 function actionCard(a){
