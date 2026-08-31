@@ -5,6 +5,7 @@ const root=process.cwd();
 const failures=[];
 const required=[
   'supabase/functions/monitoring-run/index.ts',
+  'supabase/functions/system-health/index.ts',
   'supabase/migrations/20260831_phase14_monitoring_recovery_foundation.sql',
   'supabase/migrations/20260831_phase14_monitoring_schedule.sql'
 ];
@@ -23,6 +24,10 @@ for(const forbidden of ['sk_live_','sk_test_','whsec_','sb_secret_','SUPABASE_SE
 if(worker.includes("action_type==='deploy_paid_project_production'&&settings.auto_recovery_enabled")) failures.push('Monitoring worker may auto-retry production deployment');
 if(!worker.includes("rel.previous_release_id&&settings.auto_recovery_enabled")) failures.push('Automatic production recovery is not restricted to releases with a previous version');
 
+const health=await source('supabase/functions/system-health/index.ts');
+for(const marker of ['release:\'14.0.0\'','monitoring_enabled','auto_recovery_enabled','automation_monitor_runs','automation_incidents','open_incidents','automatic_recovery:true']) if(!health.includes(marker)) failures.push(`System health missing monitoring marker: ${marker}`);
+for(const forbidden of ['sk_live_','sk_test_','whsec_','sb_secret_','SUPABASE_SERVICE_ROLE_KEY']) if(health.includes(forbidden)) failures.push(`System health contains secret marker: ${forbidden}`);
+
 const foundation=await source('supabase/migrations/20260831_phase14_monitoring_recovery_foundation.sql');
 for(const marker of [
   'automation_monitor_runs','automation_incidents','automation_recovery_attempts','enable row level security',
@@ -36,4 +41,4 @@ for(const marker of ['bonebrake-monitoring-5m','*/5 * * * *','net.http_post','va
 if(schedule.includes('x-bonebrake-monitor-key\',\'')&&/[a-f0-9]{48,}/i.test(schedule)) failures.push('Monitoring schedule appears to embed a raw secret');
 
 if(failures.length){console.error(`Phase 14 monitoring checks failed (${failures.length}):`);for(const failure of failures)console.error(`- ${failure}`);process.exit(1)}
-console.log('Phase 14 monitoring checks passed: five-minute cron, Vault credential isolation, owner-only incident history, bounded automatic recovery, escalation, and known-good production rollback safeguards verified.');
+console.log('Phase 14 monitoring checks passed: five-minute cron, Vault credential isolation, owner-only incident history, bounded automatic recovery, escalation, health reporting, and known-good production rollback safeguards verified.');
