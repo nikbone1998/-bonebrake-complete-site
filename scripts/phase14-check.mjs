@@ -20,9 +20,7 @@ const required=[
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
-try{
-  execFileSync(process.execPath,['--check',path.join(root,'phase14-autopilot.js')],{stdio:'pipe'});
-}catch(error){failures.push(`phase14-autopilot.js syntax invalid: ${String(error.stderr||error.message).trim()}`)}
+try{execFileSync(process.execPath,['--check',path.join(root,'phase14-autopilot.js')],{stdio:'pipe'});}catch(error){failures.push(`phase14-autopilot.js syntax invalid: ${String(error.stderr||error.message).trim()}`)}
 
 try{
   const html=await fs.readFile(path.join(root,'dashboard.html'),'utf8');
@@ -47,10 +45,13 @@ try{
 
 try{
   const executor=await fs.readFile(path.join(root,'supabase/functions/autopilot-execute/index.ts'),'utf8');
-  for(const marker of ['owner_only','action_not_approved','autopilot_disabled','prospecting_disabled',"status:'executing'","status:'completed'","status:'failed'",'run_prospect_audit','promote_prospect_to_crm','crmQualification'])if(!executor.includes(marker))failures.push(`Autopilot executor missing safeguard/lifecycle marker: ${marker}`);
+  for(const marker of ['owner_or_retry_worker_required','RETRYABLE_ACTIONS','retry_context_invalid','retry_context_not_dispatching','x-bonebrake-retry-key','action_not_approved','autopilot_disabled','prospecting_disabled',"status:'executing'","status:'completed'","status:'failed'",'run_prospect_audit','promote_prospect_to_crm','crmQualification'])if(!executor.includes(marker))failures.push(`Autopilot executor missing safeguard/lifecycle marker: ${marker}`);
   if(!executor.includes("candidate.qualification_tier==='A'?'high':'medium'")) failures.push('Executor does not map A/B prospect tiers to valid CRM qualification values');
   if(!executor.includes(".eq('status','approved')")) failures.push('Executor does not atomically claim only approved actions');
   if(!executor.includes(".eq('status','executing')")) failures.push('Executor completion/failure does not guard executing state');
+  if(!executor.includes(".eq('action_id',action.id).eq('action_type',action.action_type).eq('status','dispatching')")) failures.push('Retry worker executor access is not bound to the exact dispatching retry job/action');
+  const allowlist=executor.match(/RETRYABLE_ACTIONS=new Set\((\[[^\n]+\])\)/)?.[1]||'';
+  for(const forbidden of ['start_paid_project_fulfillment','apply_paid_project_revision','approve_paid_project_release','deploy_paid_project_production'])if(allowlist.includes(forbidden))failures.push(`Autopilot executor retry allowlist contains high-risk action: ${forbidden}`);
 }catch(error){failures.push(`Autopilot executor validation failed: ${error.message}`)}
 
 try{
@@ -100,19 +101,12 @@ try{
   if(!pgnet.includes('create extension if not exists pg_net')) failures.push('pg_net enablement migration is missing');
 }catch(error){failures.push(`pg_net migration validation failed: ${error.message}`)}
 
-try{
-  await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
-  failures.push('Temporary Phase 13 owner bootstrap bridge must not ship in Phase 14');
-}catch{}
+try{await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));failures.push('Temporary Phase 13 owner bootstrap bridge must not ship in Phase 14');}catch{}
 
 try{
   const workflow=await fs.readFile(path.join(root,'.github/workflows/phase13-ci.yml'),'utf8');
   if(!/phase14-\*/.test(workflow)) failures.push('CI does not run on Phase 14 branches');
 }catch(error){failures.push(`Phase 14 CI validation failed: ${error.message}`)}
 
-if(failures.length){
-  console.error(`Phase 14 Autopilot checks failed (${failures.length}):`);
-  for(const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
-}
-console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, Stripe payment safety, internal networking, credential, and CI safeguards).`);
+if(failures.length){console.error(`Phase 14 Autopilot checks failed (${failures.length}):`);for(const failure of failures) console.error(`- ${failure}`);process.exit(1)}
+console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, context-bound retry authentication, prospect staging, qualification, executor lifecycle, Preview Factory, Stripe payment safety, internal networking, credential, and CI safeguards).`);
