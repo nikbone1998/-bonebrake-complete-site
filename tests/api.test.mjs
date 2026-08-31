@@ -4,144 +4,21 @@ import health from '../api/health.js';
 import audit from '../api/audit.js';
 import lead from '../api/lead.js';
 
-function response() {
-  return {
-    statusCode: 200,
-    headers: {},
-    body: undefined,
-    ended: false,
-    setHeader(key, value) { this.headers[String(key).toLowerCase()] = value; },
-    status(code) { this.statusCode = code; return this; },
-    json(value) { this.body = value; this.ended = true; return this; },
-    end(value) { this.body = value; this.ended = true; return this; }
-  };
-}
+function response(){return{statusCode:200,headers:{},body:undefined,ended:false,setHeader(key,value){this.headers[String(key).toLowerCase()]=value},status(code){this.statusCode=code;return this},json(value){this.body=value;this.ended=true;return this},end(value){this.body=value;this.ended=true;return this}}}
+function request(method,body,ip){return{method,body,headers:ip?{'x-forwarded-for':ip}:{}}}
 
-function request(method, body, ip) {
-  return { method, body, headers: ip ? { 'x-forwarded-for': ip } : {} };
-}
+test('health endpoint reports Phase 12 release and a healthy persistent data plane',async()=>{const originalFetch=global.fetch;global.fetch=async()=>({ok:true,status:200,async json(){return{ok:true,database:'reachable',latency_ms:18,tables:{leads:2,audits:1,projects:1}}}});try{const res=response();await health({method:'GET'},res);assert.equal(res.statusCode,200);assert.equal(res.body.ok,true);assert.equal(res.body.release,'12.0.0');assert.equal(res.body.build,'phase12-six-figure-platform');assert.equal(res.body.frontend_backend_synchronized,true);assert.equal(res.body.data_plane.database,'reachable');assert.equal(res.body.lead_pipeline,'first_party_persistent_with_provider_fallback');assert.equal(res.body.audit,'live_structural_persisted_shareable_with_history');assert.equal(res.headers['cache-control'],'no-store, max-age=0')}finally{global.fetch=originalFetch}});
 
-test('health endpoint reports Phase 11 release and a healthy persistent data plane', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = async () => ({
-    ok: true,
-    status: 200,
-    async json() { return { ok:true, database:'reachable', latency_ms:18, tables:{ leads:2, audits:1, projects:1 } }; }
-  });
-  try {
-    const res = response();
-    await health({ method:'GET' }, res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(res.body.ok, true);
-    assert.equal(res.body.release, '11.0.0');
-    assert.equal(res.body.build, 'phase11-operational-platform');
-    assert.equal(res.body.frontend_backend_synchronized, true);
-    assert.equal(res.body.data_plane.database, 'reachable');
-    assert.equal(res.body.lead_pipeline, 'first_party_persistent_with_provider_fallback');
-    assert.equal(res.headers['cache-control'], 'no-store, max-age=0');
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test('health becomes degraded if persistent data plane is unavailable', async () => {
-  const originalFetch = global.fetch;
-  global.fetch = async () => ({ ok:false, status:503, async json() { return { ok:false, database:'error' }; } });
-  try {
-    const res = response();
-    await health({ method:'GET' }, res);
-    assert.equal(res.statusCode, 503);
-    assert.equal(res.body.ok, false);
-    assert.equal(res.body.data_plane.ok, false);
-  } finally {
-    global.fetch = originalFetch;
-  }
-});
-
-test('health rejects writes without calling dependencies', async () => {
-  const res = response();
-  await health({ method:'POST' }, res);
-  assert.equal(res.statusCode, 405);
-});
-
-test('audit rejects unsupported methods', async () => {
-  const res = response();
-  await audit(request('GET', null, '203.0.113.11'), res);
-  assert.equal(res.statusCode, 405);
-  assert.equal(res.body.error, 'method_not_allowed');
-});
-
-test('audit rejects invalid URLs', async () => {
-  const res = response();
-  await audit(request('POST', { url:'not-a-url' }, '203.0.113.12'), res);
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.error, 'invalid_url');
-});
-
-test('audit blocks IPv4 loopback/private targets before fetch', async () => {
-  const res = response();
-  await audit(request('POST', { url:'http://127.0.0.1/' }, '203.0.113.13'), res);
-  assert.equal(res.statusCode, 403);
-  assert.equal(res.body.error, 'private_target');
-});
-
-test('audit blocks cloud metadata/link-local targets before fetch', async () => {
-  const res = response();
-  await audit(request('POST', { url:'http://169.254.169.254/latest/meta-data/' }, '203.0.113.14'), res);
-  assert.equal(res.statusCode, 403);
-  assert.equal(res.body.error, 'private_target');
-});
-
-test('audit blocks IPv6 loopback targets before fetch', async () => {
-  const res = response();
-  await audit(request('POST', { url:'http://[::1]/' }, '203.0.113.15'), res);
-  assert.equal(res.statusCode, 403);
-  assert.equal(res.body.error, 'private_target');
-});
-
-test('audit rejects URLs containing credentials', async () => {
-  const res = response();
-  await audit(request('POST', { url:'https://user:pass@example.com/' }, '203.0.113.16'), res);
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.error, 'credentials_not_allowed');
-});
-
-test('lead endpoint rejects invalid leads', async () => {
-  const res = response();
-  await lead(request('POST', { name:'Test', email:'invalid' }, '203.0.113.21'), res);
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.code, 'invalid_lead');
-});
-
-test('lead endpoint rejects oversized payloads', async () => {
-  const res = response();
-  await lead(request('POST', JSON.stringify({ name:'Test', email:'test@example.com', description:'x'.repeat(25_000) }), '203.0.113.22'), res);
-  assert.equal(res.statusCode, 413);
-  assert.equal(res.body.code, 'payload_too_large');
-});
-
-test('lead endpoint enforces the form timing guard', async () => {
-  const res = response();
-  await lead(request('POST', { name:'Human', email:'human@example.com', form_loaded_at:Date.now() }, '203.0.113.23'), res);
-  assert.equal(res.statusCode, 429);
-  assert.equal(res.body.code, 'submitted_too_quickly');
-  assert.equal(res.headers['retry-after'], '2');
-});
-
-test('lead honeypot returns a neutral success without delivery', async () => {
-  const res = response();
-  await lead(request('POST', { _honey:'bot-filled', name:'Bot', email:'bot@example.com' }, '203.0.113.24'), res);
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.success, true);
-});
-
-test('legacy lead adapter remains explicit when no server delivery provider is configured', async () => {
-  const original = process.env.LEAD_WEBHOOK_URL;
-  delete process.env.LEAD_WEBHOOK_URL;
-  const res = response();
-  await lead(request('POST', { name:'Real Person', email:'person@example.com' }, '203.0.113.25'), res);
-  assert.equal(res.statusCode, 503);
-  assert.equal(res.body.code, 'delivery_adapter_unconfigured');
-  assert.equal(res.body.fallback, 'client_provider');
-  if (original !== undefined) process.env.LEAD_WEBHOOK_URL = original;
-});
+test('health becomes degraded if persistent data plane is unavailable',async()=>{const originalFetch=global.fetch;global.fetch=async()=>({ok:false,status:503,async json(){return{ok:false,database:'error'}}});try{const res=response();await health({method:'GET'},res);assert.equal(res.statusCode,503);assert.equal(res.body.ok,false);assert.equal(res.body.data_plane.ok,false)}finally{global.fetch=originalFetch}});
+test('health rejects writes without calling dependencies',async()=>{const res=response();await health({method:'POST'},res);assert.equal(res.statusCode,405)});
+test('audit rejects unsupported methods',async()=>{const res=response();await audit(request('GET',null,'203.0.113.11'),res);assert.equal(res.statusCode,405);assert.equal(res.body.error,'method_not_allowed')});
+test('audit rejects invalid URLs',async()=>{const res=response();await audit(request('POST',{url:'not-a-url'},'203.0.113.12'),res);assert.equal(res.statusCode,400);assert.equal(res.body.error,'invalid_url')});
+test('audit blocks IPv4 loopback/private targets before fetch',async()=>{const res=response();await audit(request('POST',{url:'http://127.0.0.1/'},'203.0.113.13'),res);assert.equal(res.statusCode,403);assert.equal(res.body.error,'private_target')});
+test('audit blocks cloud metadata/link-local targets before fetch',async()=>{const res=response();await audit(request('POST',{url:'http://169.254.169.254/latest/meta-data/'},'203.0.113.14'),res);assert.equal(res.statusCode,403);assert.equal(res.body.error,'private_target')});
+test('audit blocks IPv6 loopback targets before fetch',async()=>{const res=response();await audit(request('POST',{url:'http://[::1]/'},'203.0.113.15'),res);assert.equal(res.statusCode,403);assert.equal(res.body.error,'private_target')});
+test('audit rejects URLs containing credentials',async()=>{const res=response();await audit(request('POST',{url:'https://user:pass@example.com/'},'203.0.113.16'),res);assert.equal(res.statusCode,400);assert.equal(res.body.error,'credentials_not_allowed')});
+test('lead endpoint rejects invalid leads',async()=>{const res=response();await lead(request('POST',{name:'Test',email:'invalid'},'203.0.113.21'),res);assert.equal(res.statusCode,400);assert.equal(res.body.code,'invalid_lead')});
+test('lead endpoint rejects oversized payloads',async()=>{const res=response();await lead(request('POST',JSON.stringify({name:'Test',email:'test@example.com',description:'x'.repeat(25_000)}),'203.0.113.22'),res);assert.equal(res.statusCode,413);assert.equal(res.body.code,'payload_too_large')});
+test('lead endpoint enforces the form timing guard',async()=>{const res=response();await lead(request('POST',{name:'Human',email:'human@example.com',form_loaded_at:Date.now()},'203.0.113.23'),res);assert.equal(res.statusCode,429);assert.equal(res.body.code,'submitted_too_quickly');assert.equal(res.headers['retry-after'],'2')});
+test('lead honeypot returns a neutral success without delivery',async()=>{const res=response();await lead(request('POST',{_honey:'bot-filled',name:'Bot',email:'bot@example.com'},'203.0.113.24'),res);assert.equal(res.statusCode,200);assert.equal(res.body.success,true)});
+test('legacy lead adapter remains explicit when no server delivery provider is configured',async()=>{const original=process.env.LEAD_WEBHOOK_URL;delete process.env.LEAD_WEBHOOK_URL;const res=response();await lead(request('POST',{name:'Real Person',email:'person@example.com'},'203.0.113.25'),res);assert.equal(res.statusCode,503);assert.equal(res.body.code,'delivery_adapter_unconfigured');assert.equal(res.body.fallback,'client_provider');if(original!==undefined)process.env.LEAD_WEBHOOK_URL=original});
