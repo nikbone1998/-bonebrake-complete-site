@@ -8,7 +8,8 @@ const required=[
   'supabase/functions/domain-onboarding/index.ts','supabase/functions/monitoring-run/index.ts',
   'supabase/migrations/20260831_phase14_domain_onboarding_foundation.sql',
   'supabase/migrations/20260831_phase14_domain_onboarding_authoritative_dns.sql',
-  'supabase/migrations/20260831_phase14_domain_onboarding_schedule.sql'
+  'supabase/migrations/20260831_phase14_domain_onboarding_schedule.sql',
+  'supabase/migrations/20260831_phase14_domain_reporting_enum_alignment.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing domain onboarding file: ${file}`)}}
 async function read(file){try{return await fs.readFile(path.join(root,file),'utf8')}catch(error){failures.push(`${file} unreadable: ${error.message}`);return ''}}
@@ -41,6 +42,10 @@ if(authoritative.includes('grant execute')&&!authoritative.includes('to service_
 const schedule=await read('supabase/migrations/20260831_phase14_domain_onboarding_schedule.sql');
 for(const marker of ['bonebrake-domain-onboarding-15m','*/15 * * * *','net.http_post','vault.decrypted_secrets','bonebrake_domain_onboarding_worker_secret','"action":"sweep"'])if(!schedule.includes(marker))failures.push(`Domain scheduler missing marker: ${marker}`);
 
+const reporting=await read('supabase/migrations/20260831_phase14_domain_reporting_enum_alignment.sql');
+for(const marker of ["status in ('pending','awaiting_dns')","host_status='verification_required'","status='error' or ssl_status='error'","status in ('verified','active') and ssl_status='ready'"])if(!reporting.includes(marker))failures.push(`Domain reporting alignment missing marker: ${marker}`);
+if(reporting.includes("status='failed' or ssl_status='failed'"))failures.push('Executive Brief still uses obsolete domain failed enum');
+
 const ui=await read('phase14-domain-onboarding.js');
 for(const marker of ['Domain Onboarding','Register domain','dns_instructions_authoritative','Do not change DNS yet','rotate_token','attach_client_domain_to_vercel','Open attachment approval'])if(!ui.includes(marker))failures.push(`Owner domain UI missing marker: ${marker}`);
 for(const forbidden of ['sk_live_','sk_test_','whsec_','sb_secret_','SUPABASE_SERVICE_ROLE_KEY'])if(ui.includes(forbidden))failures.push(`Owner domain UI contains privileged credential marker: ${forbidden}`);
@@ -60,4 +65,4 @@ const dashboard=await read('dashboard.html');
 for(const marker of ['phase14-domain-onboarding.css','phase14-domain-onboarding.js','phase14-domain-bridge-guard.js'])if(!dashboard.includes(marker))failures.push(`Dashboard missing domain onboarding asset: ${marker}`);
 
 if(failures.length){console.error(`Phase 14 domain onboarding checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 domain onboarding checks passed: owner-only registration, hashed expiring client links, authoritative Vercel DNS gating, 15-minute passive verification, SSL readiness, domain-ready production requeue, bridge protection, and monitoring integration verified.');
+console.log('Phase 14 domain onboarding checks passed: owner-only registration, hashed expiring client links, authoritative Vercel DNS gating, 15-minute passive verification, SSL readiness, domain-ready production requeue, bridge protection, monitoring/reporting integration verified.');
