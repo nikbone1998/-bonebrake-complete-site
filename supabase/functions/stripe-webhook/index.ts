@@ -2,6 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.95.0'
 
 const enc = new TextEncoder()
 const clean = (v: unknown, max = 500) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+const now = () => new Date().toISOString()
 
 function hex(bytes: ArrayBuffer) {
   return Array.from(new Uint8Array(bytes)).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -49,6 +50,7 @@ Deno.serve(async (req: Request) => {
 
   let event: any
   try { event = JSON.parse(raw) } catch { return Response.json({ ok: false, error: 'invalid_json' }, { status: 400 }) }
+
   const eventId = clean(event?.id, 120)
   const eventType = clean(event?.type, 160)
   const object = event?.data?.object || {}
@@ -77,13 +79,16 @@ Deno.serve(async (req: Request) => {
   }
 
   const { data: claimed, error: claimError } = await db.from('stripe_payment_events')
-    .update({ status: 'processing', error_message: null })
+    .update({ status: 'processing', error_message: null, processed_at: null })
     .eq('stripe_event_id', eventId).eq('status', 'received')
     .select('stripe_event_id').maybeSingle()
   if (claimError || !claimed) return Response.json({ ok: true, in_progress: true })
 
+  const finish = async (status: 'processed' | 'ignored') => {
+    await db.from('stripe_payment_events').update({ status, processed_at: now(), error_message: null }).eq('stripe_event_id', eventId).eq('status', 'processing')
+  }
   const fail = async (message: string, status = 500) => {
-    await db.from('stripe_payment_events').update({ status: 'failed', error_message: clean(message, 500), processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+    await db.from('stripe_payment_events').update({ status: 'failed', error_message: clean(message, 500), processed_at: now() }).eq('stripe_event_id', eventId).eq('status', 'processing')
     return Response.json({ ok: false, error: clean(message, 160) }, { status })
   }
 
@@ -91,6 +96,8 @@ Deno.serve(async (req: Request) => {
     if (['checkout.session.completed', 'checkout.session.async_payment_succeeded'].includes(eventType)) {
       const session = object
       const sessionId = clean(session?.id, 160)
+      if (!sessionId) return await fail('checkout_session_id_missing', 422)
+
       const paymentLinkId = clean(session?.payment_link, 160) || null
       const email = clean(session?.customer_details?.email || session?.customer_email, 254).toLowerCase()
       const name = clean(session?.customer_details?.name, 200) || email || 'Stripe customer'
@@ -118,7 +125,6 @@ Deno.serve(async (req: Request) => {
       if (currency !== String(catalog.currency).toLowerCase()) return await fail('unexpected_currency', 422)
       if (amountTotal !== Number(catalog.amount_cents)) return await fail('unexpected_amount', 422)
 
-      const { data: existingSession } = await db.from('stripe_checkout_sessions').select('*').eq('stripe_checkout_session_id', sessionId).maybeSingle()
       const sessionPayload = {
         stripe_checkout_session_id: sessionId,
         stripe_payment_intent_id: paymentIntentId,
@@ -134,21 +140,35 @@ Deno.serve(async (req: Request) => {
         currency,
         checkout_status: ['open','complete','expired'].includes(checkoutStatus) ? checkoutStatus : 'complete',
         payment_status: ['unpaid','paid','no_payment_required'].includes(paymentStatus) ? paymentStatus : 'unpaid',
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        metadata: { stripe_event_id: eventId, source: 'stripe_payment_link' }
+        completed_at: now(),
+        updated_at: now(),
+        metadata: { stripe_event_id: eventId, source: 'stripe_payment_link', livemode: !!event?.livemode }
       }
-      if (existingSession) {
-        const { error } = await db.from('stripe_checkout_sessions').update(sessionPayload).eq('id', existingSession.id)
-        if (error) return await fail('checkout_session_update_failed')
-      } else {
-        const { error } = await db.from('stripe_checkout_sessions').insert(sessionPayload)
-        if (error) return await fail('checkout_session_persistence_failed')
-      }
+      const { error: sessionError } = await db.from('stripe_checkout_sessions').upsert(sessionPayload, { onConflict: 'stripe_checkout_session_id' })
+      if (sessionError) return await fail('checkout_session_persistence_failed')
 
       if (paymentStatus !== 'paid') {
-        await db.from('stripe_payment_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+        await finish('processed')
         return Response.json({ ok: true, waiting_for_payment: true })
+      }
+
+      const { data: settings } = await db.from('automation_settings').select('payments_enabled').eq('key', 'global').maybeSingle()
+      if (!settings?.payments_enabled) {
+        const { data: existingDisabledAction } = await db.from('automation_actions')
+          .select('id,payload').eq('action_type', 'process_paid_checkout').in('status', ['pending','approved','executing']).limit(100)
+        const alreadyQueued = (existingDisabledAction || []).some((a: any) => a?.payload?.checkout_session_id === sessionId)
+        if (!alreadyQueued) {
+          await db.from('automation_actions').insert({
+            action_type: 'process_paid_checkout',
+            entity_type: 'stripe_checkout_session',
+            title: `Process paid checkout for ${company || name}`,
+            summary: `${catalog.product_name} payment received while payment automation is disabled.`,
+            risk_level: 'approval', status: 'pending', proposed_by: 'stripe_webhook',
+            payload: { checkout_session_id: sessionId, package_key: catalog.package_key, amount: amountTotal / 100, external_effect: 'create_paid_project' }
+          })
+        }
+        await finish('processed')
+        return Response.json({ ok: true, payment_recorded: true, automation_paused: true })
       }
 
       const { data: row } = await db.from('stripe_checkout_sessions').select('*').eq('stripe_checkout_session_id', sessionId).single()
@@ -159,31 +179,28 @@ Deno.serve(async (req: Request) => {
         const { data: lead } = await db.from('leads').select('*').ilike('email', email).order('created_at', { ascending: false }).limit(1).maybeSingle()
         leadId = lead?.id || null
       }
+
       const dollars = amountTotal / 100
       if (!leadId) {
         if (!email) return await fail('customer_email_missing', 422)
         const { data: lead, error: leadError } = await db.from('leads').insert({
-          name,
-          email,
-          phone,
-          company,
-          website,
-          source: 'stripe_checkout',
-          status: 'won',
-          priority: 'high',
-          estimated_value: dollars,
-          opportunity_score: 100,
-          qualification: 'high',
-          next_action: 'paid_client_onboarding',
+          name, email, phone, company, website,
+          source: 'stripe_checkout', status: 'won', priority: 'high', estimated_value: dollars,
+          opportunity_score: 100, qualification: 'high', next_action: 'paid_client_onboarding',
           notes: `Paid via Stripe for ${catalog.product_name}.`
         }).select('id').single()
         if (leadError || !lead) return await fail('lead_creation_failed')
         leadId = lead.id
       } else {
-        await db.from('leads').update({
-          status: 'won', priority: 'high', estimated_value: dollars, qualification: 'high', next_action: 'paid_client_onboarding',
-          phone: phone || undefined, company: company || undefined, website: website || undefined, updated_at: new Date().toISOString()
-        }).eq('id', leadId)
+        const update: any = {
+          status: 'won', priority: 'high', estimated_value: dollars, qualification: 'high',
+          next_action: 'paid_client_onboarding', updated_at: now()
+        }
+        if (phone) update.phone = phone
+        if (company) update.company = company
+        if (website) update.website = website
+        const { error } = await db.from('leads').update(update).eq('id', leadId)
+        if (error) return await fail('lead_update_failed')
       }
 
       if (!projectId) {
@@ -205,7 +222,9 @@ Deno.serve(async (req: Request) => {
         projectId = project.id
       }
 
-      await db.from('stripe_checkout_sessions').update({ lead_id: leadId, project_id: projectId, updated_at: new Date().toISOString() }).eq('stripe_checkout_session_id', sessionId)
+      const { error: linkError } = await db.from('stripe_checkout_sessions').update({ lead_id: leadId, project_id: projectId, updated_at: now() }).eq('stripe_checkout_session_id', sessionId)
+      if (linkError) return await fail('checkout_project_link_failed')
+
       await db.from('activity').insert([
         { entity_type: 'lead', entity_id: leadId, action: 'stripe_payment_received', detail: { checkout_session_id: sessionId, package_key: catalog.package_key, amount: dollars } },
         { entity_type: 'project', entity_id: projectId, action: 'project_created_from_payment', detail: { checkout_session_id: sessionId, package_key: catalog.package_key, amount: dollars } }
@@ -214,27 +233,24 @@ Deno.serve(async (req: Request) => {
       const { data: existingAction } = await db.from('automation_actions').select('id').eq('action_type', 'start_paid_project_fulfillment').eq('entity_type', 'project').eq('entity_id', projectId).in('status', ['pending','approved','executing']).limit(1)
       if (!existingAction?.length) {
         await db.from('automation_actions').insert({
-          action_type: 'start_paid_project_fulfillment',
-          entity_type: 'project',
-          entity_id: projectId,
+          action_type: 'start_paid_project_fulfillment', entity_type: 'project', entity_id: projectId,
           title: `Start fulfillment for ${company || name}`,
           summary: `${catalog.product_name} paid in full · $${dollars.toFixed(2)}`,
-          risk_level: 'approval',
-          status: 'pending',
-          proposed_by: 'stripe_webhook',
+          risk_level: 'approval', status: 'pending', proposed_by: 'stripe_webhook',
           payload: { project_id: projectId, lead_id: leadId, checkout_session_id: sessionId, package_key: catalog.package_key, amount: dollars, external_effect: 'begin_client_fulfillment' }
         })
       }
 
-      await db.from('stripe_payment_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+      await finish('processed')
       return Response.json({ ok: true, lead_id: leadId, project_id: projectId })
     }
 
     if (eventType === 'checkout.session.async_payment_failed') {
       const sessionId = clean(object?.id, 160)
-      await db.from('stripe_checkout_sessions').update({ payment_status: 'unpaid', updated_at: new Date().toISOString() }).eq('stripe_checkout_session_id', sessionId)
-      const { data: existing } = await db.from('automation_actions').select('id').eq('action_type', 'review_failed_payment').eq('payload->>checkout_session_id', sessionId).in('status', ['pending','approved','executing']).limit(1)
-      if (!existing?.length) {
+      await db.from('stripe_checkout_sessions').update({ payment_status: 'unpaid', updated_at: now() }).eq('stripe_checkout_session_id', sessionId)
+      const { data: existing } = await db.from('automation_actions').select('id,payload').eq('action_type', 'review_failed_payment').in('status', ['pending','approved','executing']).limit(100)
+      const alreadyQueued = (existing || []).some((a: any) => a?.payload?.checkout_session_id === sessionId)
+      if (!alreadyQueued) {
         await db.from('automation_actions').insert({
           action_type: 'review_failed_payment', entity_type: 'stripe_checkout_session',
           title: 'Review failed Stripe payment', summary: `Checkout ${sessionId} reported an asynchronous payment failure.`,
@@ -242,7 +258,7 @@ Deno.serve(async (req: Request) => {
           payload: { checkout_session_id: sessionId, external_effect: 'none' }
         })
       }
-      await db.from('stripe_payment_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+      await finish('processed')
       return Response.json({ ok: true })
     }
 
@@ -251,7 +267,7 @@ Deno.serve(async (req: Request) => {
       if (paymentIntentId) {
         const { data: sessionRow } = await db.from('stripe_checkout_sessions').select('project_id').eq('stripe_payment_intent_id', paymentIntentId).maybeSingle()
         if (sessionRow?.project_id && Number(object?.amount_refunded || 0) >= Number(object?.amount || 0)) {
-          await db.from('projects').update({ payment_state: 'refunded', balance: 0, updated_at: new Date().toISOString() }).eq('id', sessionRow.project_id)
+          await db.from('projects').update({ payment_state: 'refunded', balance: 0, updated_at: now() }).eq('id', sessionRow.project_id)
           const { data: existing } = await db.from('automation_actions').select('id').eq('action_type', 'review_refunded_project').eq('entity_type', 'project').eq('entity_id', sessionRow.project_id).in('status', ['pending','approved','executing']).limit(1)
           if (!existing?.length) {
             await db.from('automation_actions').insert({
@@ -263,11 +279,11 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
-      await db.from('stripe_payment_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+      await finish('processed')
       return Response.json({ ok: true })
     }
 
-    await db.from('stripe_payment_events').update({ status: 'ignored', processed_at: new Date().toISOString() }).eq('stripe_event_id', eventId).eq('status', 'processing')
+    await finish('ignored')
     return Response.json({ ok: true, ignored: true })
   } catch (error) {
     return await fail(error instanceof Error ? error.message : 'processing_failed')
