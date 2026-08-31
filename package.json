@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node scripts/static-check.mjs && node scripts/phase14-check.mjs && node scripts/phase14-fulfillment-check.mjs && node scripts/phase14-production-host-check.mjs && node scripts/phase14-monitoring-check.mjs && node scripts/phase14-executive-brief-check.mjs && node scripts/phase14-domain-onboarding-check.mjs && node scripts/phase14-retry-engine-check.mjs && node scripts/phase14-company-flow-check.mjs && node scripts/phase14-pilot-activation-check.mjs",
+    "check": "node scripts/static-check.mjs && node scripts/phase14-check.mjs && node scripts/phase14-fulfillment-check.mjs && node scripts/phase14-production-host-check.mjs && node scripts/phase14-monitoring-check.mjs && node scripts/phase14-executive-brief-check.mjs && node scripts/phase14-domain-onboarding-check.mjs && node scripts/phase14-retry-engine-check.mjs && node scripts/phase14-company-flow-check.mjs && node scripts/phase14-pilot-activation-check.mjs && node scripts/phase14-security-hardening-check.mjs",
     "test": "node --test",
     "predeploy": "npm run check && npm test",
     "vercel-build": "npm run predeploy"
