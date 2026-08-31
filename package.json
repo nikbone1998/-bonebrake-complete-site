@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node scripts/static-check.mjs && node scripts/phase14-check.mjs",
+    "check": "node scripts/static-check.mjs && node scripts/phase14-check.mjs && node scripts/phase14-fulfillment-check.mjs",
     "test": "node --test",
     "predeploy": "npm run check && npm test",
     "vercel-build": "npm run predeploy"
