@@ -15,7 +15,8 @@ const required=[
   'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql',
   'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql',
   'supabase/migrations/20260831_phase14_preview_factory_jobs.sql',
-  'supabase/migrations/20260831_phase14_stripe_payment_ledger.sql'
+  'supabase/migrations/20260831_phase14_stripe_payment_ledger.sql',
+  'supabase/migrations/20260831_phase14_enable_pg_net.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
@@ -54,10 +55,11 @@ try{
 
 try{
   const stripe=await fs.readFile(path.join(root,'supabase/functions/stripe-webhook/index.ts'),'utf8');
-  for(const marker of ['stripe-signature','stripe_webhook_signing_secret','verifyStripeSignature',"status: 'processing'",'unexpected_amount','unexpected_currency','start_paid_project_fulfillment','charge.refunded','customer_phone','customField'])if(!stripe.includes(marker))failures.push(`Stripe webhook missing safeguard/integration marker: ${marker}`);
+  for(const marker of ['stripe-signature','stripe_webhook_signing_secret','verifyStripeSignature',"status: 'processing'",'unexpected_amount','unexpected_currency','start_paid_project_fulfillment','charge.refunded','customer_phone','customField','payments_enabled','process_paid_checkout','automation_paused'])if(!stripe.includes(marker))failures.push(`Stripe webhook missing safeguard/integration marker: ${marker}`);
   for(const forbidden of ['whsec_','sk_live_','sk_test_','rk_live_','rk_test_'])if(stripe.includes(forbidden))failures.push(`Stripe webhook source contains secret credential material: ${forbidden}`);
   if(!stripe.includes(".eq('status', 'received')")) failures.push('Stripe webhook does not atomically claim received events');
   if(!stripe.includes("prior?.status === 'processed' || prior?.status === 'ignored'")) failures.push('Stripe webhook processed-event idempotency guard is missing');
+  if(!stripe.includes("if (!settings?.payments_enabled)")) failures.push('Stripe webhook does not enforce the Payments kill switch');
 }catch(error){failures.push(`Stripe webhook validation failed: ${error.message}`)}
 
 try{
@@ -73,7 +75,7 @@ try{
 try{
   const promotion=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql'),'utf8');
   for(const marker of ['prospect_ready_for_promotion','phase14_queue_ready_prospect_promotions','promote_prospect_to_crm','combined_score',"'approval'"]){if(!promotion.includes(marker))failures.push(`Prospect promotion handoff missing marker: ${marker}`)}
-}catch(error){failures.push(`Prospect promotion handoff validation failed: ${error.message}`)}
+}catch(error){failures.push(`Prospect promotion validation failed: ${error.message}`)}
 
 try{
   const hardening=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql'),'utf8');
@@ -94,6 +96,11 @@ try{
 }catch(error){failures.push(`Stripe ledger migration validation failed: ${error.message}`)}
 
 try{
+  const pgnet=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_enable_pg_net.sql'),'utf8');
+  if(!pgnet.includes('create extension if not exists pg_net')) failures.push('pg_net enablement migration is missing');
+}catch(error){failures.push(`pg_net migration validation failed: ${error.message}`)}
+
+try{
   await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
   failures.push('Temporary Phase 13 owner bootstrap bridge must not ship in Phase 14');
 }catch{}
@@ -108,4 +115,4 @@ if(failures.length){
   for(const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, Stripe payment safety, credential, and CI safeguards).`);
+console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, Stripe payment safety, internal networking, credential, and CI safeguards).`);
