@@ -7,7 +7,8 @@ const required=[
   'supabase/functions/monitoring-run/index.ts',
   'supabase/functions/system-health/index.ts',
   'supabase/migrations/20260831_phase14_monitoring_recovery_foundation.sql',
-  'supabase/migrations/20260831_phase14_monitoring_schedule.sql'
+  'supabase/migrations/20260831_phase14_monitoring_schedule.sql',
+  'supabase/migrations/20260831_phase14_monitoring_performance_hardening.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing monitoring file: ${file}`)}}
 
@@ -40,5 +41,8 @@ const schedule=await source('supabase/migrations/20260831_phase14_monitoring_sch
 for(const marker of ['bonebrake-monitoring-5m','*/5 * * * *','net.http_post','vault.decrypted_secrets','monitoring-run','monitoring_enabled=true','auto_recovery_enabled=true']) if(!schedule.includes(marker)) failures.push(`Monitoring schedule missing marker: ${marker}`);
 if(schedule.includes('x-bonebrake-monitor-key\',\'')&&/[a-f0-9]{48,}/i.test(schedule)) failures.push('Monitoring schedule appears to embed a raw secret');
 
+const hardening=await source('supabase/migrations/20260831_phase14_monitoring_performance_hardening.sql');
+for(const marker of ['automation_incidents_escalation_action_idx',"lower((select auth.jwt())->>'email')",'owner_all_automation_monitor_runs','owner_all_automation_incidents','owner_all_automation_recovery_attempts']) if(!hardening.includes(marker)) failures.push(`Monitoring hardening missing marker: ${marker}`);
+
 if(failures.length){console.error(`Phase 14 monitoring checks failed (${failures.length}):`);for(const failure of failures)console.error(`- ${failure}`);process.exit(1)}
-console.log('Phase 14 monitoring checks passed: five-minute cron, Vault credential isolation, owner-only incident history, bounded automatic recovery, escalation, health reporting, and known-good production rollback safeguards verified.');
+console.log('Phase 14 monitoring checks passed: five-minute cron, Vault credential isolation, owner-only incident history, optimized RLS/indexes, bounded automatic recovery, escalation, health reporting, and known-good production rollback safeguards verified.');
