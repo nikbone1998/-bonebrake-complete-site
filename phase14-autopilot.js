@@ -3,6 +3,7 @@ import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
 const SB='https://usurytofnhhfxxipngdd.supabase.co';
 const KEY='sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
 const OWNER='bonebrakewebsitedesign@gmail.com';
+const EXECUTABLE_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm']);
 const db=createClient(SB,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -162,6 +163,21 @@ async function loadAutopilot(){
   }
 }
 
+async function executeApprovedAction(action){
+  if(!EXECUTABLE_ACTIONS.has(action.action_type)) return {attempted:false,reason:'not_executable'};
+  if(!settings?.autopilot_enabled||!settings?.prospecting_enabled) return {attempted:false,reason:'capability_disabled'};
+  const token=session?.access_token;
+  if(!token) throw new Error('Owner session token unavailable.');
+  const response=await fetch(`${SB}/functions/v1/autopilot-execute`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${token}`},
+    body:JSON.stringify({action_id:action.id})
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||data?.ok!==true) throw new Error(data?.error||`Executor returned ${response.status}`);
+  return {attempted:true,data};
+}
+
 async function handleDecision(e){
   const button=e.target.closest('[data-decision]');
   if(!button||!session) return;
@@ -175,8 +191,9 @@ async function handleDecision(e){
     setCardBusy(card,true);
     const now=new Date().toISOString();
     const {error}=await db.from('automation_actions').update({status:'approved',approved_at:now,approved_by:session.user.id,updated_at:now,rejection_reason:null,rejected_at:null}).eq('id',id).eq('status','pending');
+    if(error){setCardBusy(card,false);alert(`Approval failed: ${error.message}`);return;}
+    try{await executeApprovedAction(action)}catch(error){alert(`Approved, but execution did not complete: ${error instanceof Error?error.message:'unknown error'}`)}
     setCardBusy(card,false);
-    if(error){alert(`Approval failed: ${error.message}`);return;}
     await loadAutopilot();
     return;
   }
