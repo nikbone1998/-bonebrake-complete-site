@@ -11,7 +11,8 @@ const required=[
   'supabase/functions/autopilot-execute/index.ts',
   'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql',
   'supabase/migrations/20260831_phase14_prospect_audit_approval_handoff.sql',
-  'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql'
+  'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql',
+  'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
@@ -28,7 +29,7 @@ try{
 
 try{
   const source=await fs.readFile(path.join(root,'phase14-autopilot.js'),'utf8');
-  for(const marker of ["'automation_actions'","'automation_settings'",'STOP ALL AUTOMATION','approved_by','rejection_reason',"status==='completed'","status==='failed'"])if(!source.includes(marker))failures.push(`Autopilot approval layer missing marker: ${marker}`);
+  for(const marker of ["'automation_actions'","'automation_settings'",'STOP ALL AUTOMATION','approved_by','rejection_reason',"status==='completed'","status==='failed'",'EXECUTABLE_ACTIONS','/functions/v1/autopilot-execute','settings?.autopilot_enabled','settings?.prospecting_enabled'])if(!source.includes(marker))failures.push(`Autopilot approval layer missing marker: ${marker}`);
   for(const stale of ["status==='executed'","status==='error'"])if(source.includes(stale))failures.push(`Autopilot UI uses stale lifecycle status: ${stale}`);
   for(const forbidden of ['sb_secret_','SUPABASE_SERVICE_ROLE_KEY','service_role'])if(source.includes(forbidden))failures.push(`Autopilot client contains privileged credential marker: ${forbidden}`);
   for(const unsafe of ['autopilot_enabled:true','outreach_enabled:true','payments_enabled:true','production_deploy_enabled:true'])if(source.replace(/\s/g,'').includes(unsafe))failures.push(`Autopilot UI can directly enable protected capability: ${unsafe}`);
@@ -61,6 +62,11 @@ try{
   const promotion=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql'),'utf8');
   for(const marker of ['prospect_ready_for_promotion','phase14_queue_ready_prospect_promotions','promote_prospect_to_crm','combined_score',"'approval'"]){if(!promotion.includes(marker))failures.push(`Prospect promotion handoff missing marker: ${marker}`)}
 }catch(error){failures.push(`Prospect promotion handoff validation failed: ${error.message}`)}
+
+try{
+  const hardening=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql'),'utf8');
+  if(!hardening.includes('alter function public.phase14_score_prospect_candidate() set search_path = public')) failures.push('Prospect scoring search_path hardening is missing');
+}catch(error){failures.push(`Prospect scoring hardening validation failed: ${error.message}`)}
 
 try{
   await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
