@@ -25,6 +25,6 @@ Deno.serve(async(req:Request)=>{
     'X-Robots-Tag':'noindex, nofollow, noarchive',
     'Referrer-Policy':'no-referrer',
     'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox allow-scripts"
+    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://bwdnorth.com https://www.bwdnorth.com https://*.vercel.app; sandbox allow-scripts"
   }})
 })
