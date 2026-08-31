@@ -97,13 +97,14 @@ Deno.serve(async(req:Request)=>{
       }
       if(!leadId){
         const combined=Number(ready.combined_score||0)
+        const crmQualification=candidate.qualification_tier==='A'?'high':'medium'
         const {data:lead,error:leadError}=await db.from('leads').insert({
           name:candidate.contact_name||candidate.company_name,
           email,phone:candidate.phone||null,company:candidate.company_name,website:candidate.website||null,
           source:`prospecting:${candidate.source_system}`,
           status:'qualified',priority:combined>=80?'high':'normal',estimated_value:0,
-          opportunity_score:combined,qualification:candidate.qualification_tier,next_action:'prepare_preview',
-          notes:'Promoted after owner-approved prospect qualification and completed website audit.'
+          opportunity_score:combined,qualification:crmQualification,next_action:'prepare_preview',
+          notes:`Promoted after owner-approved prospect qualification and completed website audit. Prospect tier ${candidate.qualification_tier}.`
         }).select('id').single()
         if(leadError||!lead) throw new Error('lead_persistence_failed')
         leadId=lead.id
