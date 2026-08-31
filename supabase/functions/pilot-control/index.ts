@@ -5,6 +5,7 @@ const clean=(v:unknown,max=500)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,
 const uuidRe=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const headers={'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
 const allowedChecks=new Set(['ci_green','vercel_worker_route_ready','ai_runtime_certified','single_customer_checkout_ready','domain_launch_path_ready','auth_security_reviewed'])
+function jwtAal(jwt:string){try{const part=jwt.split('.')[1];if(!part)return'';const normalized=part.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(part.length/4)*4,'=');const payload=JSON.parse(atob(normalized));return clean(payload?.aal,20)}catch{return''}}
 
 Deno.serve(async(req:Request)=>{
   if(req.method!=='POST') return Response.json({ok:false,error:'method_not_allowed'},{status:405,headers})
@@ -20,6 +21,8 @@ Deno.serve(async(req:Request)=>{
   const action=clean(body?.action,40)||'read'
   const planId=clean(body?.plan_id,80)
   if(!uuidRe.test(planId)) return Response.json({ok:false,error:'valid_plan_id_required'},{status:400,headers})
+  const requiresAal2=action==='arm'||action==='activate'||(action==='mark_check'&&clean(body?.check,80)==='auth_security_reviewed'&&body?.value===true)
+  if(requiresAal2&&jwtAal(jwt)!=='aal2') return Response.json({ok:false,error:'aal2_required'},{status:403,headers})
 
   if(action==='read'||action==='refresh'){
     const {data:readiness,error:rerr}=await db.rpc('phase14_pilot_readiness',{p_plan_id:planId})
@@ -55,7 +58,7 @@ Deno.serve(async(req:Request)=>{
       if(aerr||!created) return Response.json({ok:false,error:'pilot_activation_action_queue_failed'},{status:500,headers})
       activationActionId=created.id
     }
-    await db.from('pilot_activation_events').insert({plan_id:planId,event_type:'pilot_armed',severity:'warning',detail:{activation_action_id:activationActionId}})
+    await db.from('pilot_activation_events').insert({plan_id:planId,event_type:'pilot_armed',severity:'warning',detail:{activation_action_id:activationActionId,aal:'aal2'}})
     return Response.json({ok:true,status:'armed',activation_action_id:activationActionId},{headers})
   }
 
