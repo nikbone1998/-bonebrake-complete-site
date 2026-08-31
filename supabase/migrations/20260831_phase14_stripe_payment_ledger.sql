@@ -87,6 +87,7 @@ revoke insert, update, delete on public.stripe_catalog from anon, authenticated;
 revoke insert, update, delete on public.stripe_checkout_sessions from anon, authenticated;
 revoke insert, update, delete on public.stripe_payment_events from anon, authenticated;
 
+create index if not exists stripe_checkout_sessions_package_idx on public.stripe_checkout_sessions(package_key);
 create index if not exists stripe_checkout_sessions_lead_idx on public.stripe_checkout_sessions(lead_id);
 create index if not exists stripe_checkout_sessions_project_idx on public.stripe_checkout_sessions(project_id);
 create index if not exists stripe_checkout_sessions_payment_status_idx on public.stripe_checkout_sessions(payment_status, completed_at desc);
