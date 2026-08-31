@@ -9,11 +9,13 @@ const required=[
   'phase14-autopilot.css',
   'supabase/functions/prospect-stage/index.ts',
   'supabase/functions/autopilot-execute/index.ts',
+  'supabase/functions/stripe-webhook/index.ts',
   'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql',
   'supabase/migrations/20260831_phase14_prospect_audit_approval_handoff.sql',
   'supabase/migrations/20260831_phase14_prospect_promotion_approval_handoff.sql',
   'supabase/migrations/20260831_phase14_pin_prospect_scoring_search_path.sql',
-  'supabase/migrations/20260831_phase14_preview_factory_jobs.sql'
+  'supabase/migrations/20260831_phase14_preview_factory_jobs.sql',
+  'supabase/migrations/20260831_phase14_stripe_payment_ledger.sql'
 ];
 for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing Phase 14 file: ${file}`)}}
 
@@ -51,6 +53,14 @@ try{
 }catch(error){failures.push(`Autopilot executor validation failed: ${error.message}`)}
 
 try{
+  const stripe=await fs.readFile(path.join(root,'supabase/functions/stripe-webhook/index.ts'),'utf8');
+  for(const marker of ['stripe-signature','stripe_webhook_signing_secret','verifyStripeSignature',"status: 'processing'",'unexpected_amount','unexpected_currency','start_paid_project_fulfillment','charge.refunded','customer_phone','customField'])if(!stripe.includes(marker))failures.push(`Stripe webhook missing safeguard/integration marker: ${marker}`);
+  for(const forbidden of ['whsec_','sk_live_','sk_test_','rk_live_','rk_test_'])if(stripe.includes(forbidden))failures.push(`Stripe webhook source contains secret credential material: ${forbidden}`);
+  if(!stripe.includes(".eq('status', 'received')")) failures.push('Stripe webhook does not atomically claim received events');
+  if(!stripe.includes("prior?.status === 'processed' || prior?.status === 'ignored'")) failures.push('Stripe webhook processed-event idempotency guard is missing');
+}catch(error){failures.push(`Stripe webhook validation failed: ${error.message}`)}
+
+try{
   const migration=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_prospect_qualification_engine.sql'),'utf8');
   for(const marker of ['qualification_tier','score_breakdown','phase14_score_prospect_candidate','prospect_ready_for_audit','security_invoker=true',"qualification_tier in ('A','B')"]){if(!migration.includes(marker))failures.push(`Prospect qualification migration missing marker: ${marker}`)}
 }catch(error){failures.push(`Prospect qualification validation failed: ${error.message}`)}
@@ -72,10 +82,16 @@ try{
 
 try{
   const preview=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_preview_factory_jobs.sql'),'utf8');
-  for(const marker of ['prospect_preview_jobs','owner_all_prospect_preview_jobs','prospect_ready_for_preview','phase14_queue_ready_previews','build_prospect_preview','preview_generation_only',"'approval'","security_invoker=true"]){if(!preview.includes(marker))failures.push(`Preview Factory migration missing marker: ${marker}`)}
+  for(const marker of ['prospect_preview_jobs','owner_all_prospect_preview_jobs','prospect_ready_for_preview','phase14_queue_ready_previews','build_prospect_preview','preview_generation_only',"'approval'",'security_invoker=true']){if(!preview.includes(marker))failures.push(`Preview Factory migration missing marker: ${marker}`)}
   if(!preview.includes("l.next_action='prepare_preview'")) failures.push('Preview Factory does not require the CRM prepare_preview state');
   if(!preview.includes("status in ('queued','generating','generated','qa','ready_for_review','approved')")) failures.push('Preview Factory active-job dedupe guard is missing');
 }catch(error){failures.push(`Preview Factory validation failed: ${error.message}`)}
+
+try{
+  const stripeMigration=await fs.readFile(path.join(root,'supabase/migrations/20260831_phase14_stripe_payment_ledger.sql'),'utf8');
+  for(const marker of ['stripe_catalog','stripe_checkout_sessions','stripe_payment_events','integration_secrets',"status in ('received','processing','processed','ignored','failed')",'revoke all on public.integration_secrets','owner_read_stripe_checkout_sessions'])if(!stripeMigration.includes(marker))failures.push(`Stripe ledger migration missing security/integration marker: ${marker}`);
+  for(const forbidden of ['whsec_','sk_live_','sk_test_','rk_live_','rk_test_','buy.stripe.com/'])if(stripeMigration.includes(forbidden))failures.push(`Stripe ledger migration exposes sensitive/shareable Stripe material: ${forbidden}`);
+}catch(error){failures.push(`Stripe ledger migration validation failed: ${error.message}`)}
 
 try{
   await fs.access(path.join(root,'api/phase13-owner-bootstrap.js'));
@@ -92,4 +108,4 @@ if(failures.length){
   for(const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, credential, and CI safeguards).`);
+console.log(`Phase 14 Autopilot checks passed (${required.length} required files + approval, kill-switch, prospect staging, qualification, executor lifecycle, Preview Factory, Stripe payment safety, credential, and CI safeguards).`);
