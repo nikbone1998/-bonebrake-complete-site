@@ -24,22 +24,38 @@ Deno.serve(async(req:Request)=>{
   }
   const [{data:settings},{data:action},{data:job}]=await Promise.all([
     db.from('automation_settings').select('autopilot_enabled,fulfillment_enabled,production_deploy_enabled').eq('key','global').maybeSingle(),
-    db.from('automation_actions').select('id,action_type,status,entity_id').eq('id',actionId).maybeSingle(),
+    db.from('automation_actions').select('id,action_type,status,entity_id,payload').eq('id',actionId).maybeSingle(),
     db.from('project_fulfillment_jobs').select('id,project_id,status,generation_spec').eq('id',jobId).maybeSingle()
   ])
   if(!settings?.autopilot_enabled||!settings?.fulfillment_enabled) return Response.json({ok:false,error:'fulfillment_disabled'},{status:423,headers})
-  if(!action||action.action_type!=='generate_paid_project_build'||action.status!=='executing') return Response.json({ok:false,error:'action_not_executing'},{status:409,headers})
-  if(!job||job.project_id!==row.project_id||!['queued','generating'].includes(job.status)) return Response.json({ok:false,error:'job_not_ready'},{status:409,headers})
+  if(!action||!['generate_paid_project_build','apply_paid_project_revision'].includes(action.action_type)||action.status!=='executing') return Response.json({ok:false,error:'action_not_executing'},{status:409,headers})
+  if(!job||job.project_id!==row.project_id||!['queued','generating','ready_for_review'].includes(job.status)) return Response.json({ok:false,error:'job_not_ready'},{status:409,headers})
   const {data:project}=await db.from('projects').select('id,client_name,project_type,payment_state,agreed_price,paid_amount').eq('id',row.project_id).maybeSingle()
   if(!project||project.payment_state!=='paid'||Number(project.paid_amount)<Number(project.agreed_price)) return Response.json({ok:false,error:'paid_project_required'},{status:409,headers})
+
+  const mode=row.metadata?.mode==='revision'?'revision':'generate'
+  let revision:any=null,baseArtifact:any=null
+  if(mode==='revision'){
+    const revisionId=clean(row.metadata?.revision_id,80),baseArtifactId=clean(row.metadata?.base_artifact_id,80)
+    if(!uuidRe.test(revisionId)||!uuidRe.test(baseArtifactId)) return Response.json({ok:false,error:'revision_authorization_invalid'},{status:409,headers})
+    const [{data:r},{data:a}]=await Promise.all([
+      db.from('project_revision_requests').select('id,project_id,artifact_id,status,request_text,structured_request').eq('id',revisionId).maybeSingle(),
+      db.from('project_generated_artifacts').select('id,project_id,fulfillment_job_id,version,title,summary,html,content_sha256,status').eq('id',baseArtifactId).maybeSingle()
+    ])
+    if(!r||r.project_id!==project.id||!['approved','processing'].includes(r.status)) return Response.json({ok:false,error:'revision_not_ready'},{status:409,headers})
+    if(!a||a.project_id!==project.id||a.fulfillment_job_id!==job.id||!['review','approved','archived'].includes(a.status)) return Response.json({ok:false,error:'base_artifact_unavailable'},{status:409,headers})
+    revision=r;baseArtifact=a
+  }
 
   const {data:claimed,error:claimError}=await db.from('generation_worker_tokens').update({status:'claimed',claimed_at:now(),claim_count:1}).eq('id',row.id).eq('status','issued').select('id').maybeSingle()
   if(claimError||!claimed) return Response.json({ok:false,error:'worker_authorization_already_claimed'},{status:409,headers})
 
   return Response.json({
     ok:true,
+    mode,
     authorization:{action_id:actionId,project_id:project.id,fulfillment_job_id:job.id,preview_only:true,production_release_authorized:false},
     project:{client_name:project.client_name,project_type:project.project_type},
-    generation_spec:job.generation_spec||{}
+    generation_spec:job.generation_spec||{},
+    ...(mode==='revision'?{revision:{id:revision.id,request_text:revision.request_text,structured_request:revision.structured_request||{}},base_artifact:{id:baseArtifact.id,version:baseArtifact.version,title:baseArtifact.title,summary:baseArtifact.summary,html:baseArtifact.html,content_sha256:baseArtifact.content_sha256}}:{})
   },{headers})
 })
