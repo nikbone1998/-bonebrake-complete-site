@@ -3,9 +3,9 @@ import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
 const SB='https://usurytofnhhfxxipngdd.supabase.co';
 const KEY='sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
 const OWNER='bonebrakewebsitedesign@gmail.com';
-const EXECUTABLE_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm','start_paid_project_fulfillment','prepare_paid_project_build']);
+const EXECUTABLE_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm','start_paid_project_fulfillment','prepare_paid_project_build','generate_paid_project_build']);
 const PROSPECT_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm']);
-const FULFILLMENT_ACTIONS=new Set(['start_paid_project_fulfillment','prepare_paid_project_build']);
+const FULFILLMENT_ACTIONS=new Set(['start_paid_project_fulfillment','prepare_paid_project_build','generate_paid_project_build']);
 const db=createClient(SB,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -172,7 +172,8 @@ async function executeApprovedAction(action){
   if(FULFILLMENT_ACTIONS.has(action.action_type)&&!settings?.fulfillment_enabled) return {attempted:false,reason:'fulfillment_disabled'};
   const token=session?.access_token;
   if(!token) throw new Error('Owner session token unavailable.');
-  const response=await fetch(`${SB}/functions/v1/autopilot-execute`,{
+  const executor=action.action_type==='generate_paid_project_build'?'generate-project-build':'autopilot-execute';
+  const response=await fetch(`${SB}/functions/v1/${executor}`,{
     method:'POST',
     headers:{'Content-Type':'application/json','apikey':KEY,'Authorization':`Bearer ${token}`},
     body:JSON.stringify({action_id:action.id})
