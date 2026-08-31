@@ -3,7 +3,9 @@ import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
 const SB='https://usurytofnhhfxxipngdd.supabase.co';
 const KEY='sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
 const OWNER='bonebrakewebsitedesign@gmail.com';
-const EXECUTABLE_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm']);
+const EXECUTABLE_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm','start_paid_project_fulfillment','prepare_paid_project_build']);
+const PROSPECT_ACTIONS=new Set(['run_prospect_audit','promote_prospect_to_crm']);
+const FULFILLMENT_ACTIONS=new Set(['start_paid_project_fulfillment','prepare_paid_project_build']);
 const db=createClient(SB,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -165,7 +167,9 @@ async function loadAutopilot(){
 
 async function executeApprovedAction(action){
   if(!EXECUTABLE_ACTIONS.has(action.action_type)) return {attempted:false,reason:'not_executable'};
-  if(!settings?.autopilot_enabled||!settings?.prospecting_enabled) return {attempted:false,reason:'capability_disabled'};
+  if(!settings?.autopilot_enabled) return {attempted:false,reason:'autopilot_disabled'};
+  if(PROSPECT_ACTIONS.has(action.action_type)&&!settings?.prospecting_enabled) return {attempted:false,reason:'prospecting_disabled'};
+  if(FULFILLMENT_ACTIONS.has(action.action_type)&&!settings?.fulfillment_enabled) return {attempted:false,reason:'fulfillment_disabled'};
   const token=session?.access_token;
   if(!token) throw new Error('Owner session token unavailable.');
   const response=await fetch(`${SB}/functions/v1/autopilot-execute`,{
