@@ -1,0 +1,67 @@
+import { createClient } from 'npm:@supabase/supabase-js@2.95.0'
+
+const OWNER='bonebrakewebsitedesign@gmail.com'
+const now=()=>new Date().toISOString()
+const clean=(v:unknown,max=1200)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
+async function sha256(value:string){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(d)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function sameSecret(a:string,b:string){if(!a||!b)return false;const[x,y]=await Promise.all([sha256(a),sha256(b)]);return x===y}
+const prospectTypes=new Set(['run_prospect_audit','promote_prospect_to_crm'])
+const fulfillmentTypes=new Set(['prepare_paid_project_build','generate_paid_project_build'])
+function hasPattern(error:string,patterns:string[]){const s=String(error||'').toLowerCase();return (patterns||[]).some(p=>p&&s.includes(String(p).toLowerCase()))}
+function nextDelay(policy:any,attemptCount:number){const base=Math.max(5,Number(policy.base_delay_seconds||60)),max=Math.max(base,Number(policy.max_delay_seconds||1800)),mult=Math.max(1,Number(policy.backoff_multiplier||2));const raw=Math.min(max,Math.round(base*Math.pow(mult,Math.max(0,attemptCount-1))));const jitter=Math.max(0,Math.min(50,Number(policy.jitter_percent||0)))/100;const factor=1+((Math.random()*2)-1)*jitter;return Math.max(5,Math.round(raw*factor))}
+
+Deno.serve(async(req:Request)=>{
+  if(req.method!=='POST')return Response.json({ok:false,error:'method_not_allowed'},{status:405,headers:{'Cache-Control':'no-store'}})
+  const url=Deno.env.get('SUPABASE_URL'),service=JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}')['default'],publishable=JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')||'{}')['default']
+  if(!url||!service||!publishable)return Response.json({ok:false,error:'server_configuration_error'},{status:500})
+  const db=createClient(url,service,{auth:{persistSession:false,autoRefreshToken:false}})
+  const {data:secretRow}=await db.from('integration_secrets').select('secret_value').eq('key','retry_engine_worker_secret').maybeSingle()
+  const workerSecret=String(secretRow?.secret_value||'')
+  let authorized=await sameSecret(req.headers.get('x-bonebrake-retry-key')||'',workerSecret)
+  if(!authorized){const auth=req.headers.get('authorization')||'',jwt=auth.startsWith('Bearer ')?auth.slice(7):'';if(jwt){const{data:{user}}=await db.auth.getUser(jwt);authorized=String(user?.email||'').toLowerCase()===OWNER}}
+  if(!authorized)return Response.json({ok:false,error:'retry_engine_auth_required'},{status:401,headers:{'Cache-Control':'no-store'}})
+  let body:any={};try{body=await req.json()}catch{}
+  const trigger=['cron','manual','certification'].includes(body?.trigger_source)?body.trigger_source:'cron'
+  const [{data:settings},{data:policies}]=await Promise.all([db.from('automation_settings').select('*').eq('key','global').maybeSingle(),db.from('automation_retry_policies').select('*').eq('enabled',true)])
+  if(!settings)return Response.json({ok:false,error:'settings_unavailable'},{status:503})
+  if(trigger==='cron'&&!settings.retry_engine_enabled)return Response.json({ok:true,status:'skipped',reason:'retry_engine_disabled'},{headers:{'Cache-Control':'no-store'}})
+  const policyMap=new Map((policies||[]).map((p:any)=>[p.action_type,p]))
+  let captured=0,dispatched=0,succeeded=0,failed=0,deadLettered=0,waiting=0
+
+  const escalate=async(job:any,action:any,reason:string,errorMessage:string)=>{
+    let{data:letter}=await db.from('automation_dead_letters').select('*').eq('retry_job_id',job.id).maybeSingle()
+    if(!letter){const{data:newLetter}=await db.from('automation_dead_letters').insert({retry_job_id:job.id,action_id:action.id,action_type:action.action_type,reason,error_message:clean(errorMessage,2000),payload_snapshot:{action_payload:action.payload||{},action_result:action.result||{},approved_at:action.approved_at||null,risk_level:action.risk_level}}).select('*').single();letter=newLetter}
+    let escalationId=job.escalation_action_id||letter?.escalation_action_id||null
+    if(!escalationId){const{data:existing}=await db.from('automation_actions').select('id').eq('action_type','investigate_retry_dead_letter').eq('entity_type','automation_retry_job').eq('entity_id',job.id).in('status',['pending','approved']).limit(1);escalationId=existing?.[0]?.id||null}
+    if(!escalationId){const{data:a}=await db.from('automation_actions').insert({action_type:'investigate_retry_dead_letter',entity_type:'automation_retry_job',entity_id:job.id,title:`Retry exhausted: ${action.title}`,summary:`${action.action_type} cannot be safely retried further. Reason: ${reason}.`,risk_level:'approval',status:'pending',proposed_by:'retry_engine',payload:{retry_job_id:job.id,action_id:action.id,action_type:action.action_type,reason,error:errorMessage,recommended_effect:'owner_review_only'}}).select('id').single();escalationId=a?.id||null}
+    const stamp=now();await db.from('automation_dead_letters').update({escalation_action_id:escalationId,updated_at:stamp}).eq('retry_job_id',job.id);await db.from('automation_retry_jobs').update({status:job.max_attempts>0&&job.attempt_count>=job.max_attempts?'exhausted':'manual',dead_lettered_at:stamp,escalation_action_id:escalationId,last_error:clean(errorMessage,2000),updated_at:stamp}).eq('id',job.id);deadLettered++;return escalationId
+  }
+
+  const {data:failedActions}=await db.from('automation_actions').select('*').eq('status','failed').order('updated_at',{ascending:true}).limit(150)
+  for(const action of failedActions||[]){const policy:any=policyMap.get(action.action_type);if(!policy)continue;const{data:existing}=await db.from('automation_retry_jobs').select('*').eq('action_id',action.id).maybeSingle();if(existing)continue;const error=clean(action.error_message||action.result?.error||'execution_failed',2000),nonRetry=!policy.auto_retry||policy.max_attempts<=0||hasPattern(error,policy.non_retryable_error_patterns||[])||(!action.approved_at&&action.risk_level!=='auto');const delay=nextDelay(policy,1),status=nonRetry?'manual':'scheduled';const{data:job}=await db.from('automation_retry_jobs').insert({action_id:action.id,action_type:action.action_type,status,attempt_count:0,max_attempts:Number(policy.max_attempts||0),next_attempt_at:nonRetry?null:new Date(Date.now()+delay*1000).toISOString(),last_error:error}).select('*').single();if(!job)continue;captured++;if(nonRetry)await escalate(job,action,!policy.auto_retry?'policy_manual_only':!action.approved_at&&action.risk_level!=='auto'?'approval_missing':'non_retryable_error',error)}
+
+  if(!settings.auto_retry_enabled)return Response.json({ok:true,trigger_source:trigger,captured,dispatched,succeeded,failed,dead_lettered:deadLettered,waiting,auto_retry_enabled:false},{headers:{'Cache-Control':'no-store'}})
+  const {data:jobs}=await db.from('automation_retry_jobs').select('*,automation_retry_policies(*)').in('status',['scheduled','waiting']).lte('next_attempt_at',now()).order('next_attempt_at',{ascending:true}).limit(20)
+  for(const job of jobs||[]){const policy:any=job.automation_retry_policies||policyMap.get(job.action_type);if(!policy||!policy.enabled||!policy.auto_retry){const{data:action}=await db.from('automation_actions').select('*').eq('id',job.action_id).maybeSingle();if(action)await escalate(job,action,'policy_manual_only',job.last_error||'retry policy disabled');continue}
+    const{data:action}=await db.from('automation_actions').select('*').eq('id',job.action_id).maybeSingle();if(!action){await db.from('automation_retry_jobs').update({status:'cancelled',completed_at:now(),updated_at:now(),last_error:'action_missing'}).eq('id',job.id);continue}
+    if(action.status==='completed'){await db.from('automation_retry_jobs').update({status:'succeeded',completed_at:now(),updated_at:now()}).eq('id',job.id);succeeded++;continue}
+    if(action.status!=='failed'){await db.from('automation_retry_jobs').update({status:'waiting',next_attempt_at:new Date(Date.now()+5*60_000).toISOString(),updated_at:now(),last_error:`action_state_${action.status}`}).eq('id',job.id);waiting++;continue}
+    if(job.attempt_count>=job.max_attempts){await escalate(job,action,'attempts_exhausted',action.error_message||job.last_error||'attempts exhausted');continue}
+    const capabilityBlocked=!settings.autopilot_enabled||(prospectTypes.has(action.action_type)&&!settings.prospecting_enabled)||(fulfillmentTypes.has(action.action_type)&&!settings.fulfillment_enabled)
+    if(capabilityBlocked){await db.from('automation_retry_jobs').update({status:'waiting',next_attempt_at:new Date(Date.now()+5*60_000).toISOString(),updated_at:now(),last_error:'capability_kill_switch_off'}).eq('id',job.id);waiting++;continue}
+    const nextAttempt=Number(job.attempt_count||0)+1
+    const{data:claimed}=await db.from('automation_retry_jobs').update({status:'dispatching',attempt_count:nextAttempt,last_attempt_at:now(),updated_at:now()}).eq('id',job.id).in('status',['scheduled','waiting']).select('*').maybeSingle();if(!claimed)continue
+    const{data:attempt}=await db.from('automation_retry_attempts').insert({retry_job_id:job.id,action_id:action.id,attempt_number:nextAttempt,scheduled_for:job.next_attempt_at,status:'dispatching'}).select('id').single()
+    if(policy.reset_strategy==='reset_generation_job'){const target=action.payload?.fulfillment_job_id;if(target){await db.from('generation_worker_tokens').update({status:'cancelled'}).eq('action_id',action.id).eq('status','issued');await db.from('project_fulfillment_jobs').update({status:'queued',failure_code:null,failure_message:null,updated_at:now()}).eq('id',target).eq('status','failed')}}
+    const{data:reapproved}=await db.from('automation_actions').update({status:'approved',execute_after:now(),error_message:null,updated_at:now()}).eq('id',action.id).eq('status','failed').select('id').maybeSingle()
+    if(!reapproved){await db.from('automation_retry_attempts').update({status:'skipped',completed_at:now(),error_message:'action_reapprove_race'}).eq('id',attempt?.id);await db.from('automation_retry_jobs').update({status:'waiting',next_attempt_at:new Date(Date.now()+5*60_000).toISOString(),updated_at:now(),last_error:'action_reapprove_race'}).eq('id',job.id);waiting++;continue}
+    dispatched++
+    let httpStatus=0,responseBody:any={},requestError=''
+    try{const response=await fetch(`${url}${policy.executor_path}`,{method:'POST',headers:{'Content-Type':'application/json','apikey':publishable,'x-bonebrake-retry-key':workerSecret},body:JSON.stringify({action_id:action.id,retry_job_id:job.id,retry_source:'retry_engine'}),signal:AbortSignal.timeout(action.action_type==='generate_paid_project_build'?125000:60000)});httpStatus=response.status;responseBody=await response.json().catch(()=>({}));if(!response.ok)requestError=clean(responseBody?.error||`executor_http_${response.status}`,1200)}catch(error){requestError=clean(error instanceof Error?error.message:String(error),1200)}
+    const{data:after}=await db.from('automation_actions').select('*').eq('id',action.id).maybeSingle();const stamp=now()
+    if(after?.status==='completed'){await db.from('automation_retry_attempts').update({status:'succeeded',completed_at:stamp,http_status:httpStatus||null,response:responseBody||{}}).eq('id',attempt?.id);await db.from('automation_retry_jobs').update({status:'succeeded',completed_at:stamp,updated_at:stamp,last_http_status:httpStatus||null,last_response:responseBody||{},last_error:null}).eq('id',job.id);succeeded++;continue}
+    if(after?.status==='failed'){const err=clean(after.error_message||requestError||responseBody?.error||'retry_failed',2000),fatal=hasPattern(err,policy.non_retryable_error_patterns||[]);await db.from('automation_retry_attempts').update({status:'failed',completed_at:stamp,http_status:httpStatus||null,error_message:err,response:responseBody||{}}).eq('id',attempt?.id);failed++;if(fatal||nextAttempt>=Number(job.max_attempts||0)){await db.from('automation_retry_jobs').update({last_http_status:httpStatus||null,last_response:responseBody||{},last_error:err,updated_at:stamp}).eq('id',job.id);await escalate({...job,attempt_count:nextAttempt},after,fatal?'non_retryable_error_after_attempt':'attempts_exhausted',err)}else{const delay=nextDelay(policy,nextAttempt+1);await db.from('automation_retry_jobs').update({status:'scheduled',next_attempt_at:new Date(Date.now()+delay*1000).toISOString(),last_http_status:httpStatus||null,last_response:responseBody||{},last_error:err,updated_at:stamp}).eq('id',job.id)}continue}
+    const uncertain=clean(requestError||responseBody?.error||`action_state_${after?.status||'unknown'}`,1200);await db.from('automation_retry_attempts').update({status:'skipped',completed_at:stamp,http_status:httpStatus||null,error_message:uncertain,response:responseBody||{}}).eq('id',attempt?.id);await db.from('automation_retry_jobs').update({status:'waiting',next_attempt_at:new Date(Date.now()+10*60_000).toISOString(),last_http_status:httpStatus||null,last_response:responseBody||{},last_error:uncertain,updated_at:stamp}).eq('id',job.id);waiting++
+  }
+  return Response.json({ok:true,trigger_source:trigger,captured,dispatched,succeeded,failed,dead_lettered:deadLettered,waiting},{headers:{'Cache-Control':'no-store'}})
+})
