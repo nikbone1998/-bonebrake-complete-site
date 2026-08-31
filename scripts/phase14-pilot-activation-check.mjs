@@ -10,6 +10,7 @@ const control='supabase/functions/pilot-control/index.ts';
 const ui='phase14-pilot-control.js';
 const css='phase14-pilot-control.css';
 const loader='phase14-domain-bridge-guard.js';
+const approvalBridge='phase14-pilot-approval-executor.js';
 async function read(file){try{return await fs.readFile(path.join(root,file),'utf8')}catch{failures.push(`Missing pilot file: ${file}`);return ''}}
 const sql=await read(migration);
 const aclSql=await read(acl);
@@ -18,6 +19,7 @@ const api=await read(control);
 const uiJs=await read(ui);
 const uiCss=await read(css);
 const loaderJs=await read(loader);
+const approvalJs=await read(approvalBridge);
 
 for(const marker of [
   'pilot_activation_plans','pilot_activation_events','max_paid_projects = 1','max_concurrent_projects = 1',
@@ -61,12 +63,14 @@ for(const marker of [
 ]) if(!uiJs.includes(marker)) failures.push(`Pilot dashboard missing safety marker: ${marker}`);
 
 for(const marker of ['p14-pilot-hero','p14-pilot-check','p14-pilot-arm','p14-pilot-halt']) if(!uiCss.includes(marker)) failures.push(`Pilot dashboard CSS missing marker: ${marker}`);
-if(!loaderJs.includes("import('./phase14-pilot-control.js')")) failures.push('Pilot dashboard loader is not wired into the owner dashboard.');
+for(const marker of ["actionType.includes('activate single customer pilot')","event.stopImmediatePropagation()","import('./phase14-pilot-approval-executor.js')","import('./phase14-pilot-control.js')"]) if(!loaderJs.includes(marker)) failures.push(`Pilot dashboard loader/approval guard missing marker: ${marker}`);
+for(const marker of ["export async function approvePilotAction","action.action_type!=='activate_single_customer_pilot'","status:'approved'","action:'activate'",'Customer capacity: exactly 1','Prospecting, Outreach, Auto Reply and Production remain OFF']) if(!approvalJs.includes(marker)) failures.push(`Pilot approval bridge missing safety marker: ${marker}`);
 
 if(sql.includes('max_paid_projects smallint not null default 0')) failures.push('Pilot paid-project cap cannot default above/below exactly one.');
 if(api.includes("single_customer_checkout_ready:true")) failures.push('Pilot control must not hard-code checkout readiness true.');
 if(api.includes("ai_runtime_certified:true")) failures.push('Pilot control must not hard-code AI runtime certification true.');
 if(uiJs.includes("prospecting_enabled:true")||uiJs.includes("outreach_enabled:true")||uiJs.includes("production_deploy_enabled:true")) failures.push('Pilot dashboard must never directly enable restricted capabilities.');
+if(approvalJs.includes("prospecting_enabled:true")||approvalJs.includes("outreach_enabled:true")||approvalJs.includes("production_deploy_enabled:true")) failures.push('Pilot approval bridge must never directly enable restricted capabilities.');
 
 if(failures.length){console.error(`Phase 14 pilot activation checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 pilot activation checks passed: one-customer caps, external-effects lock, service-only pilot RPCs, single-use checkout binding, owner readiness UI, dedicated activation routing, and emergency halt contracts verified.');
+console.log('Phase 14 pilot activation checks passed: one-customer caps, external-effects lock, service-only pilot RPCs, single-use checkout binding, owner readiness UI, synchronous dedicated activation routing, and emergency halt contracts verified.');
