@@ -6,6 +6,7 @@ const uuidRe=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const now=()=>new Date().toISOString()
 function randomToken(){const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 async function sha256(value:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function sameSecret(a:string,b:string){if(!a||!b)return false;const[x,y]=await Promise.all([sha256(a),sha256(b)]);return x===y}
 function validateHtml(html:string){
   const problems:string[]=[]
   if(typeof html!=='string'||html.length<3000||html.length>180000) problems.push('html_size_invalid')
@@ -29,23 +30,31 @@ function approvedWorkerUrl(value:unknown){
 
 Deno.serve(async(req:Request)=>{
   if(req.method!=='POST') return Response.json({ok:false,error:'method_not_allowed'},{status:405})
-  const auth=req.headers.get('authorization')||'',jwt=auth.startsWith('Bearer ')?auth.slice(7):''
-  if(!jwt) return Response.json({ok:false,error:'authentication_required'},{status:401})
   const url=Deno.env.get('SUPABASE_URL'),secret=JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')||'{}')['default']
   if(!url||!secret) return Response.json({ok:false,error:'server_configuration_error'},{status:500})
   const db=createClient(url,secret,{auth:{persistSession:false,autoRefreshToken:false}})
-  const {data:{user},error:userError}=await db.auth.getUser(jwt)
-  if(userError||!user||String(user.email||'').toLowerCase()!==OWNER) return Response.json({ok:false,error:'owner_only'},{status:403})
   let body:any
   try{body=await req.json()}catch{return Response.json({ok:false,error:'invalid_json'},{status:400})}
-  const actionId=clean(body?.action_id,80)
+  const actionId=clean(body?.action_id,80),retryJobId=clean(body?.retry_job_id,80)
   if(!uuidRe.test(actionId)) return Response.json({ok:false,error:'valid_action_id_required'},{status:400})
+
+  const auth=req.headers.get('authorization')||'',jwt=auth.startsWith('Bearer ')?auth.slice(7):''
+  const {data:retrySecretRow}=await db.from('integration_secrets').select('secret_value').eq('key','retry_engine_worker_secret').maybeSingle()
+  const retryWorker=await sameSecret(req.headers.get('x-bonebrake-retry-key')||'',String(retrySecretRow?.secret_value||''))
+  let owner=false
+  if(jwt){const{data:{user}}=await db.auth.getUser(jwt);owner=String(user?.email||'').toLowerCase()===OWNER}
+  if(!owner&&!retryWorker) return Response.json({ok:false,error:'owner_or_retry_worker_required'},{status:401})
 
   const [{data:settings},{data:action}]=await Promise.all([
     db.from('automation_settings').select('*').eq('key','global').maybeSingle(),
     db.from('automation_actions').select('*').eq('id',actionId).maybeSingle()
   ])
   if(!settings||!action) return Response.json({ok:false,error:'action_or_settings_unavailable'},{status:404})
+  if(retryWorker){
+    if(action.action_type!=='generate_paid_project_build'||!uuidRe.test(retryJobId)) return Response.json({ok:false,error:'retry_context_invalid'},{status:403})
+    const{data:retryJob}=await db.from('automation_retry_jobs').select('id,status,action_id,action_type').eq('id',retryJobId).eq('action_id',action.id).eq('action_type',action.action_type).eq('status','dispatching').maybeSingle()
+    if(!retryJob) return Response.json({ok:false,error:'retry_context_not_dispatching'},{status:403})
+  }
   if(action.status==='completed') return Response.json({ok:true,already_completed:true,action_id:action.id,result:action.result||null})
   if(action.action_type!=='generate_paid_project_build'||action.status!=='approved') return Response.json({ok:false,error:'action_not_approved_for_generation'},{status:409})
   if(!settings.autopilot_enabled) return Response.json({ok:false,error:'autopilot_disabled'},{status:423})
