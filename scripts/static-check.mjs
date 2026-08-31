@@ -1,107 +1,20 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-
-const root = process.cwd();
-const required = [
-  'index.html',
-  'website-audit.html',
-  'dashboard.html',
-  'phase11.css',
-  'site.js',
-  'audit-page.js',
-  'dashboard.js',
-  'privacy.html',
-  'terms.html',
-  'robots.txt',
-  'sitemap.xml',
-  'vercel.json',
-  'api/health.js',
-  'api/audit.js',
-  'api/lead.js',
-  '.github/workflows/phase11-ci.yml',
-  '.well-known/security.txt',
-  'OPERATIONS.md'
-];
-
-const failures = [];
-for (const file of required) {
-  try { await fs.access(path.join(root, file)); }
-  catch { failures.push(`Missing required production file: ${file}`); }
-}
-
-let vercel = {};
-try {
-  vercel = JSON.parse(await fs.readFile(path.join(root, 'vercel.json'), 'utf8'));
-} catch (error) {
-  failures.push(`vercel.json is not valid JSON: ${error.message}`);
-}
-
-const globalHeaders = vercel?.headers?.find?.(entry => entry.source === '/(.*)')?.headers || [];
-const headerNames = new Set(globalHeaders.map(item => String(item.key || '').toLowerCase()));
-for (const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security']) {
-  if (!headerNames.has(header)) failures.push(`Missing security header in vercel.json: ${header}`);
-}
-
-try {
-  const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-  if (pkg.version !== '11.0.0') failures.push(`package.json release must be 11.0.0, found ${pkg.version || 'missing'}`);
-} catch (error) {
-  failures.push(`package.json is invalid: ${error.message}`);
-}
-
-try {
-  const index = await fs.readFile(path.join(root, 'index.html'), 'utf8');
-  for (const text of ['Bonebrake Web Design','331-203-3717','BonebrakeWebsiteDesign@gmail.com']) {
-    if (!index.includes(text)) failures.push(`index.html missing required business identity: ${text}`);
-  }
-  if (!/<meta\s+name=["']viewport["']/i.test(index)) failures.push('index.html missing viewport metadata');
-  if (!/<title>[^<]+<\/title>/i.test(index)) failures.push('index.html missing a document title');
-} catch {}
-
-try {
-  const site = await fs.readFile(path.join(root, 'site.js'), 'utf8');
-  if (!site.includes('/functions/v1/lead-intake')) failures.push('site.js is not wired to first-party persistent lead intake');
-  if (!site.includes('form.action')) failures.push('site.js is missing the emergency form provider fallback');
-  if (!site.includes('/functions/v1/analytics-track')) failures.push('site.js is not wired to first-party analytics');
-} catch {}
-
-try {
-  const health = await fs.readFile(path.join(root, 'api/health.js'), 'utf8');
-  if (!health.includes("const RELEASE = '11.0.0'")) failures.push('health endpoint does not identify release 11.0.0');
-  if (!health.includes('/functions/v1/system-health')) failures.push('health endpoint does not verify the persistent data plane');
-  if (/pre-phase8|phase8_complete|frontend_sync_pending/.test(health)) failures.push('health endpoint contains stale Phase 8 release state');
-} catch {}
-
-try {
-  const workflow = await fs.readFile(path.join(root, '.github/workflows/phase11-ci.yml'), 'utf8');
-  if (!/Phase 11 Predeploy/.test(workflow)) failures.push('CI workflow does not identify the Phase 11 release gate');
-  if (!/phase11-\*/.test(workflow)) failures.push('CI workflow does not run on Phase 11 branches');
-} catch {}
-
-try {
-  const dashboard = await fs.readFile(path.join(root, 'dashboard.js'), 'utf8');
-  if (!dashboard.toLowerCase().includes('bonebrakewebsitedesign@gmail.com')) failures.push('dashboard owner authorization target is missing');
-  if (dashboard.includes('sb_secret_') || dashboard.includes('service_role')) failures.push('dashboard client contains a privileged Supabase key reference');
-} catch {}
-
-try {
-  const files = ['site.js','audit-page.js','dashboard.js','website-audit.html','dashboard.html'];
-  for (const file of files) {
-    const source = await fs.readFile(path.join(root, file), 'utf8');
-    if (source.includes('sb_secret_') || source.includes('SUPABASE_SERVICE_ROLE_KEY')) failures.push(`${file} contains a privileged credential marker`);
-  }
-} catch {}
-
-try {
-  const security = await fs.readFile(path.join(root, '.well-known/security.txt'), 'utf8');
-  if (!/^Contact:\s*mailto:/mi.test(security)) failures.push('security.txt missing mailto contact');
-  if (!/^Expires:/mi.test(security)) failures.push('security.txt missing expiry');
-} catch {}
-
-if (failures.length) {
-  console.error(`Phase 11 predeploy static checks failed (${failures.length}):`);
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
-}
-
-console.log(`Phase 11 static checks passed (${required.length} required files + release, data-plane, and security checks).`);
+const root=process.cwd();
+const required=['index.html','work.html','website-audit.html','audit-report.html','dashboard.html','phase11.css','phase12.css','site.js','phase12.js','audit-page.js','audit-report.js','dashboard.js','case-aurelia.html','case-northstar.html','case-oak-stone.html','case-westside-auto-lab.html','case-lakeview-dental.html','aurelia.html','northstar.html','oak-stone.html','westside-auto-lab.html','lakeview-dental.html','privacy.html','terms.html','robots.txt','sitemap.xml','vercel.json','api/health.js','api/audit.js','api/lead.js','.github/workflows/phase12-ci.yml','.well-known/security.txt','OPERATIONS.md'];
+const failures=[];for(const file of required){try{await fs.access(path.join(root,file))}catch{failures.push(`Missing required production file: ${file}`)}}
+let vercel={};try{vercel=JSON.parse(await fs.readFile(path.join(root,'vercel.json'),'utf8'))}catch(error){failures.push(`vercel.json is not valid JSON: ${error.message}`)}
+const globalHeaders=vercel?.headers?.find?.(entry=>entry.source==='/(.*)')?.headers||[],headerNames=new Set(globalHeaders.map(item=>String(item.key||'').toLowerCase()));for(const header of ['x-content-type-options','x-frame-options','referrer-policy','permissions-policy','strict-transport-security'])if(!headerNames.has(header))failures.push(`Missing security header in vercel.json: ${header}`);
+try{const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));if(pkg.version!=='12.0.0')failures.push(`package.json release must be 12.0.0, found ${pkg.version||'missing'}`)}catch(error){failures.push(`package.json is invalid: ${error.message}`)}
+try{const index=await fs.readFile(path.join(root,'index.html'),'utf8');for(const text of ['Bonebrake Web Design','331-203-3717','BonebrakeWebsiteDesign@gmail.com'])if(!index.includes(text))failures.push(`index.html missing required business identity: ${text}`);if(!/<meta\s+name=["']viewport["']/i.test(index))failures.push('index.html missing viewport metadata');if(!/<title>[^<]+<\/title>/i.test(index))failures.push('index.html missing document title')}catch{}
+try{const site=await fs.readFile(path.join(root,'site.js'),'utf8');if(!site.includes('/functions/v1/lead-intake'))failures.push('site.js is not wired to first-party persistent lead intake');if(!site.includes('notifyFallback'))failures.push('site.js is missing emergency delivery fallback');if(!site.includes('/functions/v1/analytics-track'))failures.push('site.js is not wired to first-party analytics');if(!site.includes('phase12.js'))failures.push('site.js does not load the Phase 12 public experience')}catch{}
+try{const p12=await fs.readFile(path.join(root,'phase12.js'),'utf8');if(!p12.includes('p12-diagnostic'))failures.push('Phase 12 signature diagnostic missing');for(const f of ['case-aurelia.html','case-northstar.html','case-oak-stone.html','case-westside-auto-lab.html','case-lakeview-dental.html'])if(!p12.includes(f))failures.push(`Homepage case-study routing missing ${f}`)}catch{}
+try{const stat=await fs.stat(path.join(root,'northstar.html'));if(stat.size>=100_000)failures.push(`northstar.html exceeds 100 KB performance budget (${stat.size} bytes)`)}catch{}
+try{const health=await fs.readFile(path.join(root,'api/health.js'),'utf8');if(!health.includes("const RELEASE = '12.0.0'"))failures.push('health endpoint does not identify release 12.0.0');if(!health.includes("const BUILD = 'phase12-six-figure-platform'"))failures.push('health endpoint does not identify Phase 12 build');if(!health.includes('/functions/v1/system-health'))failures.push('health endpoint does not verify persistent data plane');if(/pre-phase8|phase8_complete|frontend_sync_pending|phase11_preview|phase11_production/.test(health))failures.push('health endpoint contains stale release state')}catch{}
+try{const workflow=await fs.readFile(path.join(root,'.github/workflows/phase12-ci.yml'),'utf8');if(!/Phase 12 Predeploy/.test(workflow))failures.push('CI workflow does not identify Phase 12 release gate');if(!/phase12-\*/.test(workflow))failures.push('CI workflow does not run on Phase 12 branches')}catch{}
+try{const dashboard=await fs.readFile(path.join(root,'dashboard.js'),'utf8');if(!dashboard.toLowerCase().includes('bonebrakewebsitedesign@gmail.com'))failures.push('dashboard owner authorization target missing');if(!dashboard.includes('shouldCreateUser:false'))failures.push('dashboard does not disable arbitrary owner-account creation');if(dashboard.includes('shouldCreateUser:true'))failures.push('dashboard still permits arbitrary Auth user creation');if(dashboard.includes('sb_secret_')||dashboard.includes('service_role'))failures.push('dashboard client contains privileged Supabase key reference')}catch{}
+try{const audit=await fs.readFile(path.join(root,'audit-page.js'),'utf8'),viewer=await fs.readFile(path.join(root,'audit-report.js'),'utf8');if(!audit.includes('share_token'))failures.push('audit client does not expose saved share token');if(!viewer.includes('/functions/v1/audit-report'))failures.push('shareable report is not wired to privacy-safe report endpoint');for(const marker of ['requested_by','session_id','lead_id'])if(viewer.includes(marker))failures.push(`shareable audit client depends on private field: ${marker}`)}catch{}
+try{const files=['site.js','phase12.js','audit-page.js','audit-report.js','dashboard.js','website-audit.html','audit-report.html','dashboard.html'];for(const file of files){const source=await fs.readFile(path.join(root,file),'utf8');if(source.includes('sb_secret_')||source.includes('SUPABASE_SERVICE_ROLE_KEY'))failures.push(`${file} contains a privileged credential marker`)}}catch{}
+try{const sitemap=await fs.readFile(path.join(root,'sitemap.xml'),'utf8');for(const p of ['work.html','website-audit.html','case-aurelia.html','case-northstar.html','case-oak-stone.html','case-westside-auto-lab.html','case-lakeview-dental.html'])if(!sitemap.includes(p))failures.push(`sitemap missing ${p}`);if(sitemap.includes('dashboard.html')||sitemap.includes('audit-report.html'))failures.push('private/tokenized surfaces must not be in sitemap')}catch{}
+try{const security=await fs.readFile(path.join(root,'.well-known/security.txt'),'utf8');if(!/^Contact:\s*mailto:/mi.test(security))failures.push('security.txt missing mailto contact');if(!/^Expires:/mi.test(security))failures.push('security.txt missing expiry')}catch{}
+if(failures.length){console.error(`Phase 12 predeploy static checks failed (${failures.length}):`);for(const failure of failures)console.error(`- ${failure}`);process.exit(1)}console.log(`Phase 12 static checks passed (${required.length} required files + release, UX, performance, auth, privacy, data-plane, and security checks).`);
