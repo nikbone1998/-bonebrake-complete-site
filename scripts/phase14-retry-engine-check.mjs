@@ -7,6 +7,7 @@ const required=[
   'supabase/migrations/20260831_phase14_generalized_retry_engine_foundation.sql',
   'supabase/migrations/20260831_phase14_generalized_retry_engine_schedule.sql',
   'supabase/migrations/20260831_phase14_executive_brief_retry_metrics.sql',
+  'supabase/migrations/20260831_phase14_retry_engine_rls_index_hardening.sql',
   'supabase/functions/retry-run/index.ts',
   'supabase/functions/autopilot-execute/index.ts',
   'supabase/functions/generate-project-build/index.ts',
@@ -21,11 +22,13 @@ try{execFileSync(process.execPath,['--check',path.join(root,'phase14-executive-b
 const foundation=await read('supabase/migrations/20260831_phase14_generalized_retry_engine_foundation.sql');
 for(const marker of ['automation_retry_policies','automation_retry_jobs','automation_retry_attempts','automation_dead_letters','retry_engine_enabled','auto_retry_enabled','retry_engine_worker_secret','bonebrake_retry_engine_worker_secret','vault.create_secret','owner_all_automation_retry_jobs','owner_all_automation_dead_letters'])if(!foundation.includes(marker))failures.push(`Retry foundation missing marker: ${marker}`);
 if(/bonebrake_retry_engine_worker_secret'\s*,\s*'[a-f0-9]{32,}/i.test(foundation))failures.push('Retry worker secret appears hardcoded in source');
-
 const mustManual=['start_paid_project_fulfillment','apply_paid_project_revision','review_paid_project_preview','approve_paid_project_release','deploy_paid_project_production','attach_client_domain_to_vercel','review_failed_payment','review_refunded_project'];
 for(const action of mustManual)if(!foundation.includes(`('${action}'`)||!new RegExp(`\\('${action}'[^\\n]*true,false,0,`).test(foundation))failures.push(`${action} is not explicitly manual-only with zero automatic attempts`);
 for(const action of ['run_prospect_audit','promote_prospect_to_crm','prepare_paid_project_build','generate_paid_project_build'])if(!new RegExp(`\\('${action}'[^\\n]*true,true,[1-9]`).test(foundation))failures.push(`${action} is not explicitly configured as bounded safe auto-retry`);
 if(!foundation.includes("'generate_paid_project_build','/functions/v1/generate-project-build',true,true,3")||!foundation.includes("'reset_generation_job'"))failures.push('Generation retry reset policy missing');
+
+const hardening=await read('supabase/migrations/20260831_phase14_retry_engine_rls_index_hardening.sql');
+for(const marker of ['automation_dead_letters_action_idx',"(select auth.jwt())->>'email'",'owner_all_automation_retry_policies','owner_all_automation_retry_jobs','owner_all_automation_retry_attempts','owner_all_automation_dead_letters'])if(!hardening.includes(marker))failures.push(`Retry hardening missing marker: ${marker}`);
 
 const schedule=await read('supabase/migrations/20260831_phase14_generalized_retry_engine_schedule.sql');
 for(const marker of ['internal.phase14_invoke_retry_worker','bonebrake_retry_engine_worker_secret','vault.decrypted_secrets','net.http_post','bonebrake-retry-engine-1m','* * * * *','cron.schedule','service_role'])if(!schedule.includes(marker))failures.push(`Retry scheduler missing marker: ${marker}`);
@@ -54,4 +57,4 @@ const ui=await read('phase14-executive-brief.js');
 for(const marker of ['Retry successes 24h','Retry queue','Open dead letters','Retry engine','Auto retry'])if(!ui.includes(marker))failures.push(`Executive brief UI missing retry marker: ${marker}`);
 
 if(failures.length){console.error(`Phase 14 retry-engine checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 retry-engine checks passed: bounded exponential retry, jitter, attempt history, capability kill switches, context-bound executor credentials, generation reset, dead-letter escalation, owner visibility, and explicit no-auto-retry policies for money/production/release/customer-token actions verified.');
+console.log('Phase 14 retry-engine checks passed: bounded exponential retry, jitter, attempt history, capability kill switches, context-bound executor credentials, generation reset, dead-letter escalation, optimized owner RLS, FK indexing, owner visibility, and explicit no-auto-retry policies for money/production/release/customer-token actions verified.');
