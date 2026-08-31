@@ -1,4 +1,4 @@
-name: Bonebrake Predeploy
+name: Phase 13 Predeploy / Phase 14 Autopilot
 
 on:
   push:
