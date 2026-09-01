@@ -1,4 +1,4 @@
-Bonebrake Web Design — Release 11.0.0 candidate
+Bonebrake Web Design — Release 14.0.0 certification candidate
 
 Public experience: premium BWD marketing site + five clearly labeled concept showcases + persistent live website audit.
 Operating layer: persistent Postgres leads/audits/projects/activity/analytics/content, owner-authenticated dashboard, RLS, workflow automation, first-party inquiry persistence, CMS-backed operating content, cross-system health, and release gates.

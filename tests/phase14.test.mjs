@@ -6,7 +6,7 @@ const exists=async file=>{try{await fs.access(new URL(`../${file}`,import.meta.u
 
 test('Phase 14 release identity is coherent',async()=>{const pkg=JSON.parse(await read('package.json')),health=await read('api/health.js'),workflow=await read('.github/workflows/phase14-ci.yml');assert.equal(pkg.version,'14.0.0');assert.match(health,/RELEASE = '14\.0\.0'/);assert.match(health,/phase14-six-figure-certification/);assert.match(workflow,/Phase 14 Certification Gate/);assert.match(workflow,/phase14-\*/)});
 
-test('temporary bootstrap and stale release workflows cannot ship',async()=>{assert.equal(await exists('api/phase13-owner-bootstrap.js'),false);assert.equal(await exists('.github/workflows/phase12-ci.yml'),false);assert.equal(await exists('.github/workflows/phase13-ci.yml'),false)});
+test('temporary bootstrap and stale release workflows cannot ship',async()=>{assert.equal(await exists('api/phase12-owner-bootstrap.js'),false);assert.equal(await exists('api/phase13-owner-bootstrap.js'),false);assert.equal(await exists('api/phase14-owner-login-qa.js'),false);assert.equal(await exists('.github/workflows/phase12-ci.yml'),false);assert.equal(await exists('.github/workflows/phase13-ci.yml'),false)});
 
 test('owner authentication remains fixed-owner and non-signup',async()=>{const dashboard=await read('dashboard.js');assert.match(dashboard,/bonebrakewebsitedesign@gmail\.com/i);assert.ok(dashboard.includes('shouldCreateUser:false'));assert.equal(dashboard.includes('shouldCreateUser:true'),false)});
 
