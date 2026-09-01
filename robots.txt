@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard.html
+Disallow: /audit-report.html
+Disallow: /proposal.html
+
+Sitemap: https://bwdnorth.com/sitemap.xml
