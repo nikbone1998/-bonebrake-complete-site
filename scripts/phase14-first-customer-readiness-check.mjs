@@ -18,7 +18,7 @@ requireMarkers(migrationFile,migration,["client_project_assets","client-project-
 
 const clientAssetsFile='supabase/functions/client-assets/index.ts',clientAssetFile='supabase/functions/client-asset/index.ts';
 const clientAssets=await read(clientAssetsFile),clientAsset=await read(clientAssetFile);
-requireMarkers(clientAssetsFile,clientAssets,['token_hash','MAX_FILE_BYTES=5*1024*1024','MAX_PHOTOS=6',"kind==='logo'","kind==='photo'","action==='remove'","payment_state!=='paid'","image/jpeg","image/png","image/webp"]);
+requireMarkers(clientAssetsFile,clientAssets,['token_hash','MAX_FILE_BYTES=5*1024*1024','MAX_PHOTOS=6',"kind==='logo'","kind==='photo'","action==='remove'","payment_state!=='paid'","image/jpeg","image/png","image/webp","EDITABLE_JOB_STATES=new Set(['waiting_intake','intake_ready'])",'assetIntakeOpen','asset_intake_closed','asset_intake_open:assetIntakeOpen']);
 requireMarkers(clientAssetFile,clientAsset,['asset_token',"eq('status','active')",'.storage.from(','payment_state===\'refunded\'','X-Content-Type-Options']);
 
 const intakeFile='client-intake.html',reviewUiFile='client-review.html',reviewFnFile='supabase/functions/project-review/index.ts';
@@ -43,4 +43,4 @@ const offer=await read(offerFile);
 requireMarkers(offerFile,offer,['$1,995','one project only','Two consolidated revision rounds','no required monthly maintenance','does not activate or accept payment','noindex,nofollow,noarchive']);
 
 if(failures.length){console.error(`Phase 14 first-customer readiness checks failed (${failures.length}):`);for(const failure of failures)console.error(`- ${failure}`);process.exit(1)}
-console.log('Phase 14 first-customer readiness checks passed: one-customer commercial scope, private asset handoff, exact AI asset allowlist, two-round revision policy, preview/production CSP, and manual acquisition controls verified.');
+console.log('Phase 14 first-customer readiness checks passed: one-customer commercial scope, private asset handoff and post-intake freeze, exact AI asset allowlist, two-round revision policy, preview/production CSP, and manual acquisition controls verified.');
