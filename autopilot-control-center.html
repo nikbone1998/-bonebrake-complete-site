@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#080b10">
+  <title>Bonebrake Autopilot Control Center</title>
+  <link rel="stylesheet" href="autopilot-control-center.css">
+</head>
+<body>
+  <section class="login-shell" id="loginView">
+    <div class="login-card">
+      <div class="brand-lockup"><span class="brand-mark">B</span><span><strong>Bonebrake Autopilot</strong><small>Private owner control center</small></span></div>
+      <div class="eyebrow">SECURE OWNER ACCESS</div>
+      <h1>Your automated sales operation, visible in one place.</h1>
+      <p>Prospecting, builds, QA, outreach, approvals, replies, incidents and production state are protected by Supabase Auth + RLS.</p>
+      <form id="loginForm">
+        <label>Owner email<input id="loginEmail" type="email" autocomplete="email" required value="BonebrakeWebsiteDesign@gmail.com"></label>
+        <button class="btn primary wide" id="loginBtn" type="submit">Send secure sign-in link</button>
+        <div id="loginStatus" aria-live="polite"></div>
+      </form>
+    </div>
+  </section>
+
+  <div class="app-shell" id="appView" hidden>
+    <aside class="sidebar">
+      <a class="brand-lockup sidebar-brand" href="autopilot-control-center.html"><span class="brand-mark">B</span><span><strong>Bonebrake</strong><small>Autopilot Control</small></span></a>
+      <nav class="side-nav" id="sideNav">
+        <button data-view="home" class="active"><span>⌂</span>Home</button>
+        <button data-view="runs"><span>↻</span>Runs</button>
+        <button data-view="prospects"><span>◎</span>Prospects</button>
+        <button data-view="websites"><span>▣</span>Websites</button>
+        <button data-view="approvals"><span>✓</span>Approvals <b id="approvalBadge" hidden>0</b></button>
+        <button data-view="replies"><span>↩</span>Replies</button>
+        <button data-view="health"><span>◌</span>Health</button>
+        <button data-view="metrics"><span>⌁</span>Metrics</button>
+      </nav>
+      <div class="side-footer">
+        <button class="btn ghost wide" id="ceoModeBtn">CEO Mode</button>
+        <a class="btn ghost wide" href="dashboard.html">Legacy Dashboard</a>
+        <button class="btn ghost wide" id="signOutBtn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main-shell">
+      <header class="mobile-header">
+        <div class="brand-lockup"><span class="brand-mark">B</span><span><strong>Autopilot</strong><small id="mobileStatusText">Syncing…</small></span></div>
+        <button class="icon-btn" id="mobileCeoBtn" aria-label="CEO Mode">CEO</button>
+      </header>
+
+      <div class="content-shell">
+        <section class="view active" id="view-home">
+          <div class="page-head"><div><div class="eyebrow">LIVE COMMAND CENTER</div><h1>Bonebrake Autopilot</h1><p id="syncNote">Loading real operations…</p></div><div class="head-actions"><button class="btn primary" data-command="run_now">Run Autopilot Now</button><button class="btn ghost" data-command="check_replies">Check Replies</button></div></div>
+
+          <section class="hero-status panel" id="heroStatus"></section>
+          <div class="metric-grid" id="todayMetrics"></div>
+
+          <div class="home-grid">
+            <section class="panel span-2"><div class="panel-head"><div><span class="eyebrow">WORKING NOW</span><h2>Automation lifecycle</h2></div><span class="status-pill" id="runHealthPill">WAITING</span></div><div class="stage-track" id="stageTrack"></div><div id="workingNow"></div></section>
+            <section class="panel"><div class="panel-head"><div><span class="eyebrow">NEEDS YOU</span><h2>Approval queue</h2></div><button class="text-btn" data-view-jump="approvals">View all</button></div><div id="homeApprovals"></div></section>
+            <section class="panel"><div class="panel-head"><div><span class="eyebrow">LATEST BUILD</span><h2>Most recent concept</h2></div><button class="text-btn" data-view-jump="websites">Gallery</button></div><div id="latestBuild"></div></section>
+            <section class="panel span-2"><div class="panel-head"><div><span class="eyebrow">ACTIVITY</span><h2>What just happened</h2></div></div><div class="activity-feed" id="activityFeed"></div></section>
+          </div>
+        </section>
+
+        <section class="view" id="view-runs"><div class="page-head"><div><div class="eyebrow">HOURLY AUTOMATION</div><h1>Run timeline</h1><p>Every cycle, including skipped runs and failures.</p></div><button class="btn primary" data-command="run_now">Go Again</button></div><div class="timeline" id="runsTimeline"></div></section>
+
+        <section class="view" id="view-prospects"><div class="page-head"><div><div class="eyebrow">STRICT PROSPECT STANDARD</div><h1>Prospect history</h1><p>Good business + bad website only. Rejected companies stay rejected.</p></div></div><div class="filters"><input id="prospectSearch" type="search" placeholder="Search company, domain, owner, city, industry…"><select id="prospectFilter"><option value="all">All prospects</option><option value="qualified">Qualified</option><option value="sent">Email sent</option><option value="rejected">Rejected</option><option value="replied">Replied</option></select></div><div class="prospect-grid" id="prospectGrid"></div></section>
+
+        <section class="view" id="view-websites"><div class="page-head"><div><div class="eyebrow">FULL WEBSITE PREVIEW CENTER</div><h1>Generated websites</h1><p>Interactive concepts, version history, QA, and exactly what was sent.</p></div></div><div class="filters chip-filter" id="designFilters"><button class="active" data-design-filter="all">All</button><button data-design-filter="sent">Sent</button><button data-design-filter="ready">Ready</button><button data-design-filter="client">Client</button></div><div class="design-grid" id="designGrid"></div></section>
+
+        <section class="view" id="view-approvals"><div class="page-head"><div><div class="eyebrow">OWNER APPROVAL LAYER</div><h1>Needs your decision</h1><p>High-risk actions stay gated. Buttons create contextual ChatGPT commands; they do not bypass backend controls.</p></div></div><div id="approvalList"></div></section>
+
+        <section class="view" id="view-replies"><div class="page-head"><div><div class="eyebrow">REPLIES INBOX</div><h1>Prospect responses</h1><p>Responses logged by the automation appear here with their linked design and outreach.</p></div><button class="btn primary" data-command="check_replies">Check Replies</button></div><div id="replyList"></div></section>
+
+        <section class="view" id="view-health"><div class="page-head"><div><div class="eyebrow">SYSTEM HEALTH</div><h1>Automation health</h1><p>Evidence-based status from the live Bonebrake operational layer.</p></div></div><div class="health-grid" id="healthGrid"></div><div class="home-grid"><section class="panel"><div class="panel-head"><h2>Open incidents</h2></div><div id="incidentList"></div></section><section class="panel"><div class="panel-head"><h2>Retry / dead-letter</h2></div><div id="retryList"></div></section></div><section class="panel controls-panel"><div class="panel-head"><div><span class="eyebrow">AUTOMATION CONTROLS</span><h2>Safety-aware controls</h2></div></div><div id="automationControls"></div></section></section>
+
+        <section class="view" id="view-metrics"><div class="page-head"><div><div class="eyebrow">SALES METRICS</div><h1>Results</h1><p>Qualified prospects, builds, outreach, replies and revenue.</p></div><select id="metricRange"><option value="today">Today</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="all">All Time</option></select></div><div class="metric-grid" id="metricCards"></div><div class="home-grid"><section class="panel"><div class="panel-head"><h2>Conversion funnel</h2></div><div id="funnelMetrics"></div></section><section class="panel"><div class="panel-head"><h2>Quality metrics</h2></div><div id="qualityMetrics"></div></section></div></section>
+
+        <section class="view ceo-view" id="view-ceo"><div class="page-head"><div><div class="eyebrow">CEO MODE</div><h1>Five-second operating view</h1><p>What needs you, what is working, and what happened today.</p></div><button class="btn ghost" data-view-jump="home">Exit CEO Mode</button></div><div class="ceo-grid"><section class="panel ceo-needs"><span class="eyebrow">NEEDS YOU</span><div id="ceoNeeds"></div></section><section class="panel"><span class="eyebrow">WORKING NOW</span><div id="ceoWorking"></div></section><section class="panel"><span class="eyebrow">RESULTS TODAY</span><div id="ceoResults"></div></section><section class="panel span-2"><span class="eyebrow">LATEST BUILD</span><div id="ceoBuild"></div></section><section class="panel span-2"><span class="eyebrow">LATEST REPLY</span><div id="ceoReply"></div></section></div></section>
+      </div>
+    </main>
+
+    <nav class="bottom-nav" id="bottomNav"><button data-view="home" class="active"><span>⌂</span>Home</button><button data-view="runs"><span>↻</span>Runs</button><button data-view="prospects"><span>◎</span>Prospects</button><button data-view="approvals"><span>✓</span>Approvals</button><button data-view="websites"><span>▣</span>Websites</button></nav>
+  </div>
+
+  <dialog class="modal" id="prospectModal"><div class="modal-card"><button class="modal-close" data-close="prospectModal">×</button><div id="prospectModalBody"></div></div></dialog>
+  <dialog class="modal preview-modal" id="previewModal"><div class="modal-card preview-card"><button class="modal-close" data-close="previewModal">×</button><div id="previewModalBody"></div></div></dialog>
+  <dialog class="modal" id="commandModal"><div class="modal-card command-card"><button class="modal-close" data-close="commandModal">×</button><div class="eyebrow">COMMAND CHATGPT</div><h2 id="commandTitle">Contextual command</h2><textarea id="commandText" readonly></textarea><div class="command-actions"><button class="btn primary" id="copyCommandBtn">Copy Command</button><button class="btn ghost" id="openChatGPTBtn">Open ChatGPT</button></div><p class="muted">The command carries the record context. Opening ChatGPT does not automatically execute a customer-facing or financial action.</p></div></dialog>
+
+  <script src="sales-previews/outreach-sample-archive.js"></script>
+  <script type="module" src="autopilot-control-center.js"></script>
+</body>
+</html>
