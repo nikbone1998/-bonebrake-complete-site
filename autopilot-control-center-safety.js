@@ -18,7 +18,11 @@ async function syncControlTruth(){
     if(!rowNamed('Sales Autopilot')&&tries++<20){setTimeout(apply,150);return}
     const host=document.getElementById('automationControls');
     if(host&&!document.getElementById('scopedAutomationLegend')){
-      const legend=document.createElement('div');legend.id='scopedAutomationLegend';legend.className='system-legend';legend.innerHTML='<strong>Scoped scheduler vs. backend switches</strong><span>The hourly ChatGPT workflow can be active while Bonebrake’s global backend external-effect switches remain safety-locked OFF.</span>';host.before(legend);
+      const legend=document.createElement('div');
+      legend.id='scopedAutomationLegend';
+      legend.style.cssText='display:grid;gap:5px;margin:0 0 14px;padding:13px 14px;border:1px solid rgba(95,156,255,.22);border-radius:15px;background:rgba(95,156,255,.07)';
+      legend.innerHTML='<strong style="font-size:12px;color:#dce8f8">Scoped scheduler vs. backend switches</strong><span style="font-size:11px;line-height:1.45;color:#8f9bad">The hourly ChatGPT workflow can be active while Bonebrake’s global backend external-effect switches remain safety-locked OFF.</span>';
+      host.before(legend);
     }
     paint('Sales Autopilot',{on:scheduled,locked:false,note:scheduled?(locked?'Hourly ChatGPT scheduler ON · backend master Autopilot remains OFF under global safety lock':'Hourly ChatGPT scheduler ON'):'Hourly scheduler not recorded'});
     paint('Hourly Prospecting',{on:scheduled,locked:false,note:scheduled?(locked?'Scoped hourly prospecting ON · backend Prospecting switch remains OFF under global safety lock':'Hourly prospecting schedule ON'):'Hourly prospecting schedule not recorded'});
