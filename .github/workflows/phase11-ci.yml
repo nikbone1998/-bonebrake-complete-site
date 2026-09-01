@@ -1,10 +1,10 @@
-name: Phase 8 Predeploy
+name: Phase 11 Predeploy
 
 on:
   push:
     branches:
       - main
-      - 'phase8-*'
+      - 'phase11-*'
   pull_request:
 
 permissions:

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Free Website Audit | Bonebrake Web Design</title>
+<meta name="description" content="Run a live structural website audit from Bonebrake Web Design. See measured metadata, conversion signals, structural findings, and practical recommendations.">
+<meta name="robots" content="index,follow">
+<meta property="og:title" content="Free Website Audit | Bonebrake Web Design">
+<meta property="og:description" content="A live structural review with measured findings, clearly labeled heuristics, and practical recommendations.">
+<link rel="canonical" href="https://bwdnorth.com/website-audit.html">
+<link rel="stylesheet" href="phase11.css">
+</head>
+<body class="p11-page">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="p11-topbar">
+  <div class="p11-shell p11-topbar-inner">
+    <a class="p11-brand" href="index.html"><span class="p11-brand-mark">B</span><span><strong>Bonebrake Web Design</strong><small>Independent web studio</small></span></a>
+    <nav class="p11-topnav" aria-label="Audit navigation"><a href="index.html#work">Work</a><a href="index.html#pricing">Pricing</a><a href="index.html#contact" class="primary">Start a project ↗</a></nav>
+  </div>
+</header>
+<main id="main">
+  <section class="p11-hero">
+    <div class="p11-shell p11-hero-grid">
+      <div>
+        <div class="p11-eyebrow">Live website review</div>
+        <h1 class="p11-display">See what your website is actually telling customers.</h1>
+        <p class="p11-lede">Enter a public website URL. The audit inspects the page live, records verifiable structural signals, separates measured facts from heuristics, and saves the result so Bonebrake Web Design can use it during a real review.</p>
+      </div>
+      <aside class="p11-hero-card">
+        <h2>No fake scores.</h2>
+        <p>This tool does not invent rankings, traffic, conversions, Lighthouse scores, Core Web Vitals, or accessibility certification. Every item is labeled as measured, heuristic, or recommendation.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="p11-section">
+    <div class="p11-shell">
+      <div class="p11-panel">
+        <div class="p11-panel-head"><div><div class="p11-eyebrow">Run an audit</div><h2>Website URL</h2></div><span class="p11-status ok">Live inspection</span></div>
+        <div class="p11-panel-body">
+          <form id="auditForm">
+            <div class="audit-form-grid">
+              <div class="p11-field"><label for="auditUrl">Public website</label><input id="auditUrl" name="url" type="url" inputmode="url" autocomplete="url" required placeholder="https://example.com"></div>
+              <button class="p11-btn" type="submit" id="auditSubmit">Run live audit ↗</button>
+            </div>
+            <div id="auditStatus" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="p11-section audit-result" id="auditResult" aria-live="polite">
+    <div class="p11-shell">
+      <div class="p11-section-title"><div><div class="p11-eyebrow">Audit result</div><h2 id="resultTitle">Structural review</h2></div><p id="resultMeta"></p></div>
+      <div class="p11-grid-4" id="metricGrid"></div>
+      <div class="p11-grid-2" style="margin-top:18px">
+        <section class="p11-panel">
+          <div class="p11-panel-head"><h3>Measured findings</h3><span class="p11-status ok">Observed</span></div>
+          <div class="p11-panel-body" id="measuredFindings"></div>
+        </section>
+        <section class="p11-panel">
+          <div class="p11-panel-head"><h3>Recommendations</h3><span class="p11-status warn">Directional</span></div>
+          <div class="p11-panel-body" id="recommendations"></div>
+        </section>
+      </div>
+      <section class="p11-panel" id="comparisonPanel" style="margin-top:18px;display:none">
+        <div class="p11-panel-head"><h3>Compared with the previous saved audit</h3><span class="p11-status">History</span></div>
+        <div class="p11-panel-body" id="comparisonBody"></div>
+      </section>
+      <section class="p11-panel" style="margin-top:18px">
+        <div class="p11-panel-body" style="display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap">
+          <div><div class="p11-eyebrow">Want the human review?</div><h3 style="font:400 30px/1.05 Georgia,serif;margin:8px 0 6px">I can turn these findings into a redesign direction.</h3><p style="margin:0;color:#6d6962;font:500 12px/1.6 system-ui,sans-serif">The automated audit is structural. A real redesign review adds positioning, visual credibility, service architecture, mobile UX, and conversion judgment.</p></div>
+          <a class="p11-btn" href="index.html#contact">Request a homepage preview ↗</a>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<footer class="p11-section"><div class="p11-shell" style="border-top:1px solid rgba(17,17,15,.12);padding-top:24px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;font:500 10px/1.4 system-ui,sans-serif;color:#6d6962"><span>© 2026 Bonebrake Web Design</span><span>Measured facts · labeled heuristics · no fabricated outcomes</span></div></footer>
+<script src="audit-page.js" defer></script>
+</body>
+</html>
