@@ -213,6 +213,38 @@ Every important answer should be **YES**.
 
 If there is doubt, **skip the business and find a better one**.
 
+## 11. Outbound email visual-proof hard gate
+
+Every cold outbound email that says or implies a visual sample is included must pass this gate **before Gmail send is invoked**.
+
+- Never use a GitHub-hosted, CDN-hosted, or other remote SVG as the prospect-facing email image.
+- Never rely on an externally hosted `<img src="https://…">` as the sole proof sample.
+- Render the approved concept sample to a real **PNG or JPEG** before constructing the email.
+- Preferred email sample width is **600–800 px**.
+- Preferred encoded file size is **200–500 KB**; optimize as needed while keeping the concept legible. A sample outside that target may be used only when necessary, but it must remain below 1 MB.
+- The exact raster file sent must be preserved as outreach evidence and linked to the immutable design version.
+- Construct the Gmail message with that raster file as an actual MIME attachment or true inline MIME image. For the connected Gmail sender, `attachment_files` is the default safe path unless inline-CID delivery is explicitly supported and verified.
+- The pre-send payload must contain at least one real media file and the filename must end in `.png`, `.jpg`, or `.jpeg`.
+- If the image file cannot be materialized, attached, or embedded, **do not send the email**. Mark the prospect pipeline blocked/failed at EMAIL QA instead.
+- SVG may still be retained as a source artifact for design work, but it is **not an allowed outbound email delivery format**.
+
+Immediately after each send, read the authoritative Gmail message and verify at least one of the following is true:
+
+1. `has_attachment=true` with the expected PNG/JPEG in `attachments`, or
+2. the expected PNG/JPEG appears in `inline_images` as a real MIME part.
+
+If neither is true, the send must **not** be logged as media-verified. Record the delivery defect truthfully in `prospect_outreach_events` and block any additional automated outreach to that prospect pending owner review. Never claim a visual sample was delivered when Gmail evidence does not show it.
+
+For every successful `sent` outreach event, preserve these media facts in the Control Center evidence:
+
+- sample filename
+- MIME type
+- byte size
+- raster width
+- delivery mode (`attachment` or `inline`)
+- `gmail_media_verified=true`
+- Gmail message ID and thread ID
+
 ## Core rule
 
 > **GOOD BUSINESS + BAD WEBSITE = PROSPECT.**
