@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.95.0'
 const BUCKET='client-project-assets'
 const MAX_FILE_BYTES=5*1024*1024
 const MAX_PHOTOS=6
+const EDITABLE_JOB_STATES=new Set(['waiting_intake','intake_ready'])
 const allowedMimes=new Set(['image/jpeg','image/png','image/webp'])
 const uuidRe=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const clean=(v:unknown,max=500)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
@@ -35,13 +36,18 @@ Deno.serve(async(req:Request)=>{
   const {data:intake}=await db.from('client_intake_requests').select('*').eq('token_hash',tokenHash).maybeSingle()
   if(!intake||!['pending','sent','submitted'].includes(intake.status)) return Response.json({ok:false,error:'invalid_or_expired_link'},{status:404,headers})
   if(new Date(intake.expires_at).getTime()<Date.now()) return Response.json({ok:false,error:'intake_expired'},{status:410,headers})
-  const {data:project}=await db.from('projects').select('id,status,payment_state,client_name,current_milestone').eq('id',intake.project_id).maybeSingle()
+  const [{data:project},{data:fulfillment}]=await Promise.all([
+    db.from('projects').select('id,status,payment_state,client_name,current_milestone').eq('id',intake.project_id).maybeSingle(),
+    db.from('project_fulfillment_jobs').select('id,status').eq('project_id',intake.project_id).order('created_at',{ascending:false}).limit(1).maybeSingle()
+  ])
   if(!project||project.payment_state!=='paid'||project.status==='cancelled') return Response.json({ok:false,error:'project_unavailable'},{status:409,headers})
+  const assetIntakeOpen=!fulfillment||EDITABLE_JOB_STATES.has(String(fulfillment.status||''))
 
   const {data:assets}=await db.from('client_project_assets').select('id,asset_token,asset_kind,original_filename,mime_type,size_bytes,status,created_at').eq('project_id',project.id).eq('status','active').order('created_at',{ascending:true})
   const list=(assets||[]).map((a:any)=>({id:a.id,kind:a.asset_kind,file_name:a.original_filename,mime_type:a.mime_type,size_bytes:a.size_bytes,created_at:a.created_at,asset_url:`${url}/functions/v1/client-asset?t=${encodeURIComponent(a.asset_token)}`}))
   const limits={logo:1,photos:MAX_PHOTOS,max_file_bytes:MAX_FILE_BYTES,allowed_mime_types:[...allowedMimes]}
-  if(action==='list') return Response.json({ok:true,project:{client_name:project.client_name},assets:list,limits},{headers})
+  if(action==='list') return Response.json({ok:true,project:{client_name:project.client_name},assets:list,limits,asset_intake_open:assetIntakeOpen,fulfillment_status:fulfillment?.status||null},{headers})
+  if(!assetIntakeOpen) return Response.json({ok:false,error:'asset_intake_closed',fulfillment_status:fulfillment?.status||null},{status:409,headers})
 
   if(action==='remove'){
     if(!uuidRe.test(assetId)) return Response.json({ok:false,error:'valid_asset_id_required'},{status:400,headers})
@@ -69,5 +75,5 @@ Deno.serve(async(req:Request)=>{
   const {data:row,error:insertError}=await db.from('client_project_assets').insert({project_id:project.id,intake_request_id:intake.id,storage_bucket:BUCKET,storage_path:storagePath,asset_token:assetToken,asset_kind:kind,original_filename:clean(file.name,240)||`${kind}.${ext}`,mime_type:file.type,size_bytes:file.size,status:'active',updated_at:now()}).select('id,asset_kind,original_filename,mime_type,size_bytes,created_at').single()
   if(insertError||!row){await db.storage.from(BUCKET).remove([storagePath]);return Response.json({ok:false,error:'asset_record_failed'},{status:500,headers})}
   await db.from('activity').insert({entity_type:'project',entity_id:project.id,action:'client_asset_uploaded',detail:{asset_id:row.id,asset_kind:row.asset_kind,mime_type:row.mime_type,size_bytes:row.size_bytes}})
-  return Response.json({ok:true,asset:{id:row.id,kind:row.asset_kind,file_name:row.original_filename,mime_type:row.mime_type,size_bytes:row.size_bytes,created_at:row.created_at,asset_url:`${url}/functions/v1/client-asset?t=${encodeURIComponent(assetToken)}`},limits},{headers})
+  return Response.json({ok:true,asset:{id:row.id,kind:row.asset_kind,file_name:row.original_filename,mime_type:row.mime_type,size_bytes:row.size_bytes,created_at:row.created_at,asset_url:`${url}/functions/v1/client-asset?t=${encodeURIComponent(assetToken)}`},limits,asset_intake_open:true},{headers})
 })
