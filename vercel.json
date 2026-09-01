@@ -3,6 +3,12 @@
   "trailingSlash": false,
   "headers": [
     {
+      "source": "/",
+      "headers": [
+        { "key": "Link", "value": "<https://bwdnorth.com/>; rel=\"canonical\"" }
+      ]
+    },
+    {
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
