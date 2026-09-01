@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.95.0'
 const cleanHost=(value:string)=>String(value||'').trim().toLowerCase().replace(/\.$/,'').replace(/:\d+$/,'')
 const validHost=(host:string)=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host)&&host.length<=253
 async function sha256(value:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+const ASSET_ORIGIN='https://usurytofnhhfxxipngdd.supabase.co'
 const baseHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=(), usb=()','X-Robots-Tag':'index, follow'}
 
 Deno.serve(async(req:Request)=>{
@@ -22,5 +23,5 @@ Deno.serve(async(req:Request)=>{
   if(!artifact||artifact.status!=='approved'||!artifact.html||!artifact.content_sha256) return new Response('Site unavailable',{status:503,headers:{...baseHeaders,'Cache-Control':'no-store'}})
   const actualHash=await sha256(String(artifact.html));if(actualHash!==artifact.content_sha256)return new Response('Site unavailable',{status:503,headers:{...baseHeaders,'Cache-Control':'no-store'}})
   const etag=`\"${actualHash}\"`;if(req.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers:{...baseHeaders,'Cache-Control':'public, s-maxage=60, stale-while-revalidate=300','ETag':etag}})
-  return new Response(String(artifact.html),{status:200,headers:{...baseHeaders,'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, s-maxage=60, stale-while-revalidate=300','ETag':etag,'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}})
+  return new Response(String(artifact.html),{status:200,headers:{...baseHeaders,'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, s-maxage=60, stale-while-revalidate=300','ETag':etag,'Content-Security-Policy':`default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src ${ASSET_ORIGIN} data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`}})
 })
