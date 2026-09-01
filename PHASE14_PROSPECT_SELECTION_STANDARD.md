@@ -25,27 +25,33 @@ The business should show clear evidence that it is legitimate and currently oper
 
 Avoid dead businesses, hobby businesses, extremely new companies with no track record, or businesses that appear financially weak.
 
-## 2. Website age / update window
+## 2. Website creation / rebuild window — HARD GATE
 
-Prioritize websites that appear to have last received a meaningful redesign or major update approximately **2023–2025 or earlier**.
+The prospect's **current live website must have been originally created, launched, or last meaningfully rebuilt between January 1, 2022 and December 31, 2025 inclusive.**
 
-Do **not** rely only on the copyright year in the footer.
+This is a **hard eligibility requirement**, not a preference.
 
-Research indicators such as:
+Immediately reject or skip a prospect when:
 
-- Design style
-- Page structure
-- Dated templates
-- Image age
-- Blog/news update dates
-- Metadata when available
-- Technology/framework clues
-- Old content
-- Old staff/project information
-- Stale service information
-- Archived versions/search evidence when useful
+- The current website was clearly created or meaningfully rebuilt before 2022.
+- The current website was clearly created or meaningfully rebuilt after 2025.
+- The website's creation/rebuild year cannot be reasonably verified as 2022, 2023, 2024, or 2025.
 
-A footer automatically displaying `2026` does **not** mean the website was redesigned in 2026.
+Do **not** rely only on a copyright year in the footer. A dynamically updated `2026` footer does not prove the website was created or rebuilt in 2026, and an old footer does not by itself prove an old build.
+
+Verify the 2022–2025 window using multiple credible indicators when available, such as:
+
+- Archived website snapshots and visible redesign changes
+- Technology/framework or template generation clues
+- Page/content publication dates
+- Metadata and structured data
+- Launch or redesign announcements
+- Domain/site history
+- Dated staff, project, service, news, or portfolio content
+- Image/media timestamps or asset-generation clues
+- Search-index evidence showing when the current design first appeared
+
+The system must record the **verified current website creation/rebuild year** for every prospect that advances. If the year is uncertain, **reject rather than guess**.
 
 ## 3. Website must actually need a redesign
 
@@ -133,6 +139,7 @@ Before creating a redesign, research:
 
 - Business status
 - Current website
+- Verified website creation/rebuild year
 - Services
 - Location/service area
 - Reviews
@@ -153,7 +160,7 @@ Determine whether the prospect’s website makes them look materially worse onli
 
 This is a strong buying signal.
 
-Example: the company may actually be excellent, but if three competitors have modern professional sites while their site looks eight years old, that is exactly the type of opportunity we want.
+Example: the company may actually be excellent, but if three competitors have modern professional sites while their site looks materially weaker, that is exactly the type of opportunity we want — provided the current website also passes the 2022–2025 creation/rebuild hard gate.
 
 ## 8. Require multiple website problems
 
@@ -192,9 +199,9 @@ Qualification:
 - **75–81: B** — acceptable if the website problems are obvious
 - **Below 75: reject**
 
-However, **a high business-quality score can never compensate for a website that is already good.**
+However, **a high business-quality score can never compensate for a website that is already good or a website outside the required 2022–2025 creation/rebuild window.**
 
-If the website does not clearly need a rebuild, reject it regardless of total score.
+If the website does not clearly need a rebuild, or the website-age hard gate fails, reject it regardless of total score.
 
 ## 10. Final human-style test
 
@@ -202,6 +209,7 @@ Before selecting any prospect, answer these questions:
 
 - Is the business definitely active?
 - Is it a legitimate A/B-tier company?
+- Is the current website reasonably verified as created/launched/meaningfully rebuilt in **2022, 2023, 2024, or 2025**?
 - Does the website look meaningfully outdated or poorly designed?
 - Can I identify specific professional reasons the website needs replacement?
 - Would a before/after comparison be dramatic?
@@ -247,12 +255,14 @@ For every successful `sent` outreach event, preserve these media facts in the Co
 
 ## Core rule
 
-> **GOOD BUSINESS + BAD WEBSITE = PROSPECT.**
+> **GOOD BUSINESS + BAD WEBSITE + VERIFIED 2022–2025 CURRENT SITE = PROSPECT.**
+>
+> **WEBSITE OUTSIDE 2022–2025 OR AGE NOT VERIFIABLE = REJECT.**
 >
 > **GOOD BUSINESS + GOOD WEBSITE = LEAVE THEM ALONE.**
 >
 > **BAD BUSINESS + BAD WEBSITE = LEAVE THEM ALONE.**
 
-We are looking specifically for established businesses whose real-world quality is substantially better than their online presentation.
+We are looking specifically for established businesses whose real-world quality is substantially better than their online presentation, while enforcing the required website creation/rebuild window.
 
 **Quality over volume. Never select somebody simply because an hourly prospecting slot needs to be filled.**
