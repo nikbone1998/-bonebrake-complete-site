@@ -39,12 +39,16 @@ const criticalFunctions={
   'supabase/functions/monitoring-run/index.ts':['monitor_worker_secret','x-bonebrake-monitor-key','monitor_auth_required','db.auth.getUser'],
   'supabase/functions/retry-run/index.ts':['retry_engine_worker_secret','x-bonebrake-retry-key','retry_engine_auth_required','db.auth.getUser'],
   'supabase/functions/pilot-control/index.ts':['owner_auth_required','db.auth.getUser(jwt)','jwtAal',"action==='arm'","action==='activate'",'auth_security_reviewed',"jwtAal(jwt)!=='aal2'",'aal2_required','phase14_halt_single_customer_pilot'],
-  'supabase/functions/production-deploy-execute/index.ts':['owner_only','db.auth.getUser(jwt)','jwtAal',"jwtAal(jwt)!=='aal2'",'aal2_required','deploy_paid_project_production']
+  'supabase/functions/production-deploy-execute/index.ts':['owner_only','db.auth.getUser(jwt)','jwtAal',"jwtAal(jwt)!=='aal2'",'aal2_required','deploy_paid_project_production'],
+  'supabase/functions/owner-security/index.ts':['PUBLISHABLE_KEY','signInWithPassword','mfa.enroll','mfa.challenge','mfa.verify','getAuthenticatorAssuranceLevel','Content-Security-Policy',"'Cache-Control': 'no-store, max-age=0'",'frame-ancestors']
 };
 for(const [file,markers] of Object.entries(criticalFunctions)){
   const src=await read(file);
-  for(const marker of markers) if(!src.includes(marker)) failures.push(`${file} missing authentication marker: ${marker}`);
+  for(const marker of markers) if(!src.includes(marker)) failures.push(`${file} missing authentication/security marker: ${marker}`);
 }
+
+const ownerSecurity=await read('supabase/functions/owner-security/index.ts');
+if(ownerSecurity.includes('SUPABASE_SECRET_KEYS')||ownerSecurity.includes('service_role')) failures.push('Owner security page must never embed or use a privileged Supabase server credential.');
 
 const secretPatterns=[
   ['Stripe secret key',/sk_(?:live|test)_[A-Za-z0-9]{12,}/g],
@@ -74,4 +78,4 @@ for(const full of await walk(root)){
 }
 
 if(failures.length){console.error(`Phase 14 security hardening checks failed (${failures.length}):`);for(const f of failures)console.error(`- ${f}`);process.exit(1)}
-console.log('Phase 14 security hardening checks passed: least-privilege defaults, anonymous surface reduction, trigger RPC lockdown, Auth pilot gate, AAL2/MFA requirements for pilot activation and production, critical custom-auth markers, and repository secret-literal scan verified.');
+console.log('Phase 14 security hardening checks passed: least-privilege defaults, anonymous surface reduction, trigger RPC lockdown, Auth pilot gate, AAL2/MFA requirements for pilot activation and production, Supabase-hosted owner TOTP setup safety, critical custom-auth markers, and repository secret-literal scan verified.');
