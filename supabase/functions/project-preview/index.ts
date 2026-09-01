@@ -16,15 +16,5 @@ Deno.serve(async(req:Request)=>{
   if(new Date(artifact.preview_expires_at).getTime()<Date.now()) return new Response('Preview expired',{status:410,headers:{'Cache-Control':'no-store'}})
   const {data:project}=await db.from('projects').select('payment_state,status').eq('id',artifact.project_id).maybeSingle()
   if(!project||project.payment_state==='refunded'||project.status==='cancelled') return new Response('Preview unavailable',{status:410,headers:{'Cache-Control':'no-store'}})
-
-  return new Response(String(artifact.html||''),{status:200,headers:{
-    'Content-Type':'text/html; charset=utf-8',
-    'Cache-Control':'private, no-store, max-age=0',
-    'Pragma':'no-cache',
-    'X-Content-Type-Options':'nosniff',
-    'X-Robots-Tag':'noindex, nofollow, noarchive',
-    'Referrer-Policy':'no-referrer',
-    'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://bwdnorth.com https://www.bwdnorth.com https://*.vercel.app; sandbox allow-scripts"
-  }})
+  return new Response(String(artifact.html||''),{status:200,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store, max-age=0','Pragma':'no-cache','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow, noarchive','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=(), usb=()','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors https://bwdnorth.com https://www.bwdnorth.com https://*.vercel.app; sandbox allow-scripts"}})
 })
