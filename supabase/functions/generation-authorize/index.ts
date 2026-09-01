@@ -33,6 +33,10 @@ Deno.serve(async(req:Request)=>{
   const {data:project}=await db.from('projects').select('id,client_name,project_type,payment_state,agreed_price,paid_amount').eq('id',row.project_id).maybeSingle()
   if(!project||project.payment_state!=='paid'||Number(project.paid_amount)<Number(project.agreed_price)) return Response.json({ok:false,error:'paid_project_required'},{status:409,headers})
 
+  const {data:assetRows}=await db.from('client_project_assets').select('asset_kind,original_filename,mime_type,asset_token,created_at').eq('project_id',project.id).eq('status','active').order('created_at',{ascending:true}).limit(7)
+  const approvedAssets=(assetRows||[]).map((asset:any)=>({kind:asset.asset_kind,file_name:clean(asset.original_filename,240),mime_type:asset.mime_type,asset_url:`${url}/functions/v1/client-asset?t=${encodeURIComponent(String(asset.asset_token||''))}`}))
+  const generationSpec={...(job.generation_spec||{}),approved_assets:approvedAssets,asset_policy:{source:'bonebrake_private_asset_proxy',max_logo:1,max_photos:6,arbitrary_external_assets:false}}
+
   const mode=row.metadata?.mode==='revision'?'revision':'generate'
   let revision:any=null,baseArtifact:any=null
   if(mode==='revision'){
@@ -46,16 +50,7 @@ Deno.serve(async(req:Request)=>{
     if(!a||a.project_id!==project.id||a.fulfillment_job_id!==job.id||!['review','approved','archived'].includes(a.status)) return Response.json({ok:false,error:'base_artifact_unavailable'},{status:409,headers})
     revision=r;baseArtifact=a
   }
-
   const {data:claimed,error:claimError}=await db.from('generation_worker_tokens').update({status:'claimed',claimed_at:now(),claim_count:1}).eq('id',row.id).eq('status','issued').select('id').maybeSingle()
   if(claimError||!claimed) return Response.json({ok:false,error:'worker_authorization_already_claimed'},{status:409,headers})
-
-  return Response.json({
-    ok:true,
-    mode,
-    authorization:{action_id:actionId,project_id:project.id,fulfillment_job_id:job.id,preview_only:true,production_release_authorized:false},
-    project:{client_name:project.client_name,project_type:project.project_type},
-    generation_spec:job.generation_spec||{},
-    ...(mode==='revision'?{revision:{id:revision.id,request_text:revision.request_text,structured_request:revision.structured_request||{}},base_artifact:{id:baseArtifact.id,version:baseArtifact.version,title:baseArtifact.title,summary:baseArtifact.summary,html:baseArtifact.html,content_sha256:baseArtifact.content_sha256}}:{})
-  },{headers})
+  return Response.json({ok:true,mode,authorization:{action_id:actionId,project_id:project.id,fulfillment_job_id:job.id,preview_only:true,production_release_authorized:false},project:{client_name:project.client_name,project_type:project.project_type},generation_spec:generationSpec,...(mode==='revision'?{revision:{id:revision.id,request_text:revision.request_text,structured_request:revision.structured_request||{}},base_artifact:{id:baseArtifact.id,version:baseArtifact.version,title:baseArtifact.title,summary:baseArtifact.summary,html:baseArtifact.html,content_sha256:baseArtifact.content_sha256}}:{})},{headers})
 })
