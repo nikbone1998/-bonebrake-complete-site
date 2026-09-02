@@ -1,0 +1,12 @@
+/* Phase 14 certification fixes: mobile containment + practical touch targets. */
+html,body{max-width:100%;}
+@media(max-width:640px){
+  .detail-grid{grid-template-columns:1fr!important;}
+  .detail-stack{min-width:0!important;max-width:100%!important;}
+  .p12-browser-stack{width:100%!important;max-width:100%!important;}
+  .p12-browser.one{right:32px!important;}
+  .p12-browser.two{left:15%!important;right:0!important;}
+  .p12-browser-label.b{right:0!important;max-width:44%;white-space:normal;}
+}
+.p12-nav a.primary,.p11-btn,.p11-topnav a,.p11-topnav button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;}
+button#auditSubmit,button#loginBtn,button#printProposal{min-height:44px;}
