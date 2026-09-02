@@ -1,33 +1,6 @@
-const OPERATIONS_BUILD = 'phase8-operational-platform';
-const FRONTEND_BUILD = 'pre-phase8-production-repo';
-const FRONTEND_TARGET = 'phase8-operational-platform';
-
-export default function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.setHeader('Allow', 'GET, HEAD');
-    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
-  }
-
-  const frontendSynchronized = FRONTEND_BUILD === FRONTEND_TARGET;
-  const payload = {
-    ok: true,
-    service: 'bonebrake-web-design',
-    operations_build: OPERATIONS_BUILD,
-    frontend_build: FRONTEND_BUILD,
-    frontend_target: FRONTEND_TARGET,
-    frontend_synchronized: frontendSynchronized,
-    release_status: frontendSynchronized ? 'phase8_complete' : 'phase8_operations_live_frontend_sync_pending',
-    environment: process.env.VERCEL_ENV || 'unknown',
-    region: process.env.VERCEL_REGION || null,
-    lead_delivery: process.env.LEAD_WEBHOOK_URL ? 'webhook_adapter_configured' : 'client_provider_fallback',
-    audit: 'live_heuristic',
-    timestamp: new Date().toISOString()
-  };
-
-  if (req.method === 'HEAD') return res.status(200).end();
-  return res.status(200).json(payload);
-}
+const RELEASE = '14.0.0';
+const BUILD = 'phase14-six-figure-certification';
+const DATA_HEALTH_URL = 'https://usurytofnhhfxxipngdd.supabase.co/functions/v1/system-health';
+const PUBLISHABLE_KEY = 'sb_publishable_jpA7u89wOaxWcyO5NU5cGw_HkQTnOkv';
+async function dataPlaneHealth(){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),2800);try{const response=await fetch(DATA_HEALTH_URL,{method:'GET',headers:{apikey:PUBLISHABLE_KEY,Accept:'application/json'},signal:controller.signal,cache:'no-store'}),payload=await response.json().catch(()=>({}));return{ok:response.ok&&payload?.ok===true,status:response.status,database:payload?.database||(response.ok?'unknown':'unreachable'),latency_ms:Number.isFinite(payload?.latency_ms)?payload.latency_ms:null,tables:payload?.tables||null,capabilities:payload?.capabilities||null}}catch(error){return{ok:false,status:null,database:error?.name==='AbortError'?'timeout':'unreachable',latency_ms:null,tables:null,capabilities:null}}finally{clearTimeout(timer)}}
+export default async function handler(req,res){res.setHeader('Cache-Control','no-store, max-age=0');res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('X-Content-Type-Options','nosniff');if(req.method!=='GET'&&req.method!=='HEAD'){res.setHeader('Allow','GET, HEAD');return res.status(405).json({ok:false,error:'method_not_allowed'})}const dataPlane=await dataPlaneHealth(),environment=process.env.VERCEL_ENV||'unknown',ok=dataPlane.ok,payload={ok,service:'bonebrake-web-design',release:RELEASE,build:BUILD,commit:process.env.VERCEL_GIT_COMMIT_SHA||null,release_status:environment==='production'?(ok?'phase14_production_healthy':'phase14_production_degraded'):(ok?'phase14_preview_healthy':'phase14_preview_degraded'),environment,region:process.env.VERCEL_REGION||null,frontend_backend_synchronized:true,data_plane:dataPlane,lead_pipeline:'first_party_persistent_with_provider_fallback',audit:'live_structural_persisted_shareable_with_history',analytics:'first_party_attribution_events',owner_operations:'supabase_auth_rls_crm_proposals_projects_launch_cms',portfolio:'editorial_case_studies_plus_distinct_concept_showcases',proposal_workflow:'persistent_printable_tokenized_non_contract',launch_readiness:'recorded_checklist_state_only',certification:'owner_identity_bootstrapped_temp_admin_disabled_domain_and_browser_checks_required',timestamp:new Date().toISOString()};if(req.method==='HEAD')return res.status(ok?200:503).end();return res.status(ok?200:503).json(payload)}
