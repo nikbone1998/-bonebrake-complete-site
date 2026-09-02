@@ -10,3 +10,4 @@ html,body{max-width:100%;}
 }
 .p12-nav a.primary,.p11-btn,.p11-topnav a,.p11-topnav button{min-height:44px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;}
 button#auditSubmit,button#loginBtn,button#printProposal{min-height:44px;}
+[hidden]{display:none!important;}
