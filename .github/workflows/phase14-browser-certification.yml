@@ -1,0 +1,45 @@
+name: Phase 14 Browser Certification
+
+on:
+  push:
+    branches:
+      - phase14-browser-certification
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE_URL: https://bonebrake-complete-site-1-hq2vw7fiv-nick-websites.vercel.app
+    steps:
+      - name: Checkout certification harness
+        uses: actions/checkout@v4
+      - name: Use Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify exact Phase 14 release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --location --max-time 20 "$BASE_URL/api/health")"
+          echo "$body"
+          node -e 'const p=JSON.parse(process.argv[1]); if(p.release!=="14.0.0") throw new Error(`wrong release ${p.release}`); if(p.build!=="phase14-six-figure-certification") throw new Error(`wrong build ${p.build}`); if(p.commit!=="f174122f5f76d6cc6a2b845f6273ff5c5e611a46") throw new Error(`wrong commit ${p.commit}`); if(p.ok!==true||p.data_plane?.ok!==true) throw new Error("health/data plane not green");' "$body"
+      - name: Install real Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Run full 8 x 19 viewport matrix
+        run: node scripts/phase14-browser-certify.mjs
+      - name: Upload screenshots and certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase14-browser-certification-final
+          path: artifacts/phase14-browser/
+          if-no-files-found: error
+          retention-days: 7
